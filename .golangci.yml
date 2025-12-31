@@ -10,7 +10,6 @@ output:
   formats:
     text:
       path: stdout
-  sort-results: true
 
 formatters:
   enable:
