@@ -101,9 +101,8 @@ jwt:
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Create temp config file
-			tmpFile, err := os.CreateTemp("", "config-*.yaml")
+			tmpFile, err := os.CreateTemp(t.TempDir(), "config-*.yaml")
 			require.NoError(t, err)
-			defer os.Remove(tmpFile.Name())
 
 			_, err = tmpFile.WriteString(tt.configYAML)
 			require.NoError(t, err)
@@ -111,8 +110,7 @@ jwt:
 
 			// Set env vars
 			for k, v := range tt.envVars {
-				os.Setenv(k, v)
-				defer os.Unsetenv(k)
+				t.Setenv(k, v)
 			}
 
 			// Load config

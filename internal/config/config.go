@@ -7,6 +7,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/Veritas-Calculus/vc-lab-platform/internal/constants"
 	"gopkg.in/yaml.v3"
 )
 
@@ -124,7 +125,7 @@ func (c *Config) validate() error {
 	if c.JWT.Secret == "" {
 		errs = append(errs, "jwt.secret is required")
 	}
-	if len(c.JWT.Secret) < 32 {
+	if len(c.JWT.Secret) < constants.MinJWTSecretLength {
 		errs = append(errs, "jwt.secret must be at least 32 characters")
 	}
 

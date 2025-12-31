@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/Veritas-Calculus/vc-lab-platform/internal/constants"
 	"github.com/Veritas-Calculus/vc-lab-platform/internal/repository"
 	"github.com/Veritas-Calculus/vc-lab-platform/internal/service"
 	"github.com/gin-gonic/gin"
@@ -29,10 +30,10 @@ func NewUserHandler(userService service.UserService, logger *zap.Logger) *UserHa
 // List handles listing users.
 func (h *UserHandler) List(c *gin.Context) {
 	page := parseInt(c.DefaultQuery("page", "1"), 1)
-	pageSize := parseInt(c.DefaultQuery("page_size", "20"), 20)
+	pageSize := parseInt(c.DefaultQuery("page_size", "20"), constants.DefaultPageSize)
 
-	if pageSize > 100 {
-		pageSize = 100
+	if pageSize > constants.MaxPageSize {
+		pageSize = constants.MaxPageSize
 	}
 
 	filters := service.UserFilters{
@@ -190,13 +191,13 @@ func (h *UserHandler) Delete(c *gin.Context) {
 
 // GetCurrentUser handles getting the current authenticated user.
 func (h *UserHandler) GetCurrentUser(c *gin.Context) {
-	userID, exists := c.Get("user_id")
-	if !exists {
+	userIDStr := getUserID(c)
+	if userIDStr == "" {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Not authenticated"})
 		return
 	}
 
-	user, err := h.userService.GetByID(c.Request.Context(), userID.(string))
+	user, err := h.userService.GetByID(c.Request.Context(), userIDStr)
 	if err != nil {
 		if errors.Is(err, repository.ErrNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
@@ -212,8 +213,8 @@ func (h *UserHandler) GetCurrentUser(c *gin.Context) {
 
 // UpdateCurrentUser handles updating the current authenticated user.
 func (h *UserHandler) UpdateCurrentUser(c *gin.Context) {
-	userID, exists := c.Get("user_id")
-	if !exists {
+	userIDStr := getUserID(c)
+	if userIDStr == "" {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Not authenticated"})
 		return
 	}
@@ -236,7 +237,7 @@ func (h *UserHandler) UpdateCurrentUser(c *gin.Context) {
 	}
 	// Note: regular users cannot update their own status
 
-	user, err := h.userService.Update(c.Request.Context(), userID.(string), updates)
+	user, err := h.userService.Update(c.Request.Context(), userIDStr, updates)
 	if err != nil {
 		if errors.Is(err, repository.ErrNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
@@ -258,8 +259,8 @@ type ChangePasswordRequest struct {
 
 // ChangePassword handles password changes for the current user.
 func (h *UserHandler) ChangePassword(c *gin.Context) {
-	userID, exists := c.Get("user_id")
-	if !exists {
+	userIDStr := getUserID(c)
+	if userIDStr == "" {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Not authenticated"})
 		return
 	}
@@ -270,7 +271,7 @@ func (h *UserHandler) ChangePassword(c *gin.Context) {
 		return
 	}
 
-	if err := h.userService.ChangePassword(c.Request.Context(), userID.(string), req.OldPassword, req.NewPassword); err != nil {
+	if err := h.userService.ChangePassword(c.Request.Context(), userIDStr, req.OldPassword, req.NewPassword); err != nil {
 		h.logger.Error("failed to change password", zap.Error(err))
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return

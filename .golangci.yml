@@ -29,7 +29,7 @@ linters:
     - errname
     - errorlint
     - exhaustive
-    - exportloopref
+    - copyloopvar
     - gocognit
     - goconst
     - gocritic
@@ -37,7 +37,7 @@ linters:
     - godot
     - gofmt
     - goimports
-    - gomnd
+    - mnd
     - goprintffuncname
     - gosec
     - misspell
@@ -53,8 +53,7 @@ linters:
     - rowserrcheck
     - sqlclosecheck
     - stylecheck
-    - tenv
-    - testpackage
+    - usetesting
     - tparallel
     - unconvert
     - unparam
@@ -87,16 +86,13 @@ linters-settings:
   misspell:
     locale: US
 
-  gomnd:
+  mnd:
     ignored-numbers:
       - '0'
       - '1'
       - '2'
-      - '10'
-      - '100'
     ignored-functions:
       - 'strconv.Parse*'
-      - 'time.*'
 
   revive:
     rules:
@@ -150,27 +146,10 @@ linters-settings:
 
 issues:
   exclude-rules:
-    # Exclude some linters from test files
+    # Exclude dupl from test files (test cases often have similar structure)
     - path: _test\.go
       linters:
         - dupl
-        - gomnd
-        - goconst
-        - gocyclo
-        - errcheck
-        - gosec
-        - noctx
-
-    # Exclude main.go from some checks
-    - path: cmd/server/main\.go
-      linters:
-        - gomnd
-        - gocognit
-
-    # Allow unused params in interfaces
-    - linters:
-        - unparam
-      text: "always receives"
 
   max-issues-per-linter: 50
   max-same-issues: 10

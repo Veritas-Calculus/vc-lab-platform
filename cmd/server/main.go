@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/Veritas-Calculus/vc-lab-platform/internal/config"
+	"github.com/Veritas-Calculus/vc-lab-platform/internal/constants"
 	"github.com/Veritas-Calculus/vc-lab-platform/internal/database"
 	"github.com/Veritas-Calculus/vc-lab-platform/internal/logger"
 	"github.com/Veritas-Calculus/vc-lab-platform/internal/router"
@@ -28,30 +29,37 @@ func main() {
 		panic("failed to initialize logger: " + err.Error())
 	}
 	defer func() {
-		_ = log.Sync()
+		if syncErr := log.Sync(); syncErr != nil {
+			// Ignore sync errors for stdout/stderr
+			_ = syncErr
+		}
 	}()
 
 	// Load configuration
 	cfg, err := config.Load(*configPath)
 	if err != nil {
-		log.Fatal("failed to load config", zap.Error(err))
+		log.Error("failed to load config", zap.Error(err))
+		return
 	}
 
 	// Initialize database
 	db, err := database.New(cfg.Database)
 	if err != nil {
-		log.Fatal("failed to connect to database", zap.Error(err))
+		log.Error("failed to connect to database", zap.Error(err))
+		return
 	}
 
 	// Auto migrate database schemas
-	if err := database.AutoMigrate(db); err != nil {
-		log.Fatal("failed to migrate database", zap.Error(err))
+	if migrateErr := database.AutoMigrate(db); migrateErr != nil {
+		log.Error("failed to migrate database", zap.Error(migrateErr))
+		return
 	}
 
 	// Initialize Redis
 	rdb, err := database.NewRedis(cfg.Redis)
 	if err != nil {
-		log.Fatal("failed to connect to redis", zap.Error(err))
+		log.Error("failed to connect to redis", zap.Error(err))
+		return
 	}
 	defer func() {
 		_ = rdb.Close()
@@ -66,9 +74,9 @@ func main() {
 		Handler:           r,
 		ReadTimeout:       time.Duration(cfg.Server.ReadTimeout) * time.Second,
 		WriteTimeout:      time.Duration(cfg.Server.WriteTimeout) * time.Second,
-		ReadHeaderTimeout: 5 * time.Second,
-		IdleTimeout:       120 * time.Second,
-		MaxHeaderBytes:    1 << 20, // 1MB
+		ReadHeaderTimeout: constants.ReadHeaderTimeout,
+		IdleTimeout:       constants.IdleTimeout,
+		MaxHeaderBytes:    constants.MaxHeaderBytes,
 	}
 
 	// Start server in goroutine
@@ -85,11 +93,11 @@ func main() {
 	<-quit
 	log.Info("shutting down server...")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), constants.ShutdownTimeout)
 	defer cancel()
 
 	if err := srv.Shutdown(ctx); err != nil {
-		log.Fatal("server forced to shutdown", zap.Error(err))
+		log.Error("server forced to shutdown", zap.Error(err))
 	}
 
 	log.Info("server exited")

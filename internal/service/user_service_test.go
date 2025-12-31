@@ -10,6 +10,7 @@ import (
 	"github.com/Veritas-Calculus/vc-lab-platform/internal/repository"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -29,7 +30,11 @@ func (m *MockRoleRepository) GetByID(ctx context.Context, id string) (*model.Rol
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
-	return args.Get(0).(*model.Role), args.Error(1)
+	role, ok := args.Get(0).(*model.Role)
+	if !ok {
+		return nil, args.Error(1)
+	}
+	return role, args.Error(1)
 }
 
 func (m *MockRoleRepository) GetByCode(ctx context.Context, code string) (*model.Role, error) {
@@ -37,7 +42,11 @@ func (m *MockRoleRepository) GetByCode(ctx context.Context, code string) (*model
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
-	return args.Get(0).(*model.Role), args.Error(1)
+	role, ok := args.Get(0).(*model.Role)
+	if !ok {
+		return nil, args.Error(1)
+	}
+	return role, args.Error(1)
 }
 
 func (m *MockRoleRepository) Update(ctx context.Context, role *model.Role) error {
@@ -52,7 +61,15 @@ func (m *MockRoleRepository) Delete(ctx context.Context, id string) error {
 
 func (m *MockRoleRepository) List(ctx context.Context, offset, limit int) ([]*model.Role, int64, error) {
 	args := m.Called(ctx, offset, limit)
-	return args.Get(0).([]*model.Role), args.Get(1).(int64), args.Error(2)
+	roles, ok := args.Get(0).([]*model.Role)
+	if !ok {
+		return nil, 0, args.Error(2)
+	}
+	total, ok := args.Get(1).(int64)
+	if !ok {
+		return roles, 0, args.Error(2)
+	}
+	return roles, total, args.Error(2)
 }
 
 func (m *MockRoleRepository) AddPermissions(ctx context.Context, roleID string, permissionIDs []string) error {
@@ -143,7 +160,7 @@ func TestUserService_Create(t *testing.T) {
 
 			svc := NewUserService(mockUserRepo, mockRoleRepo, logger)
 
-			user, err := svc.Create(context.Background(), tt.input)
+			user, err := svc.Create(t.Context(), tt.input)
 
 			if tt.wantErr {
 				assert.Error(t, err)
@@ -205,7 +222,7 @@ func TestUserService_GetByID(t *testing.T) {
 
 			svc := NewUserService(mockUserRepo, mockRoleRepo, logger)
 
-			user, err := svc.GetByID(context.Background(), tt.userID)
+			user, err := svc.GetByID(t.Context(), tt.userID)
 
 			if tt.wantErr {
 				assert.Error(t, err)
@@ -223,7 +240,8 @@ func TestUserService_GetByID(t *testing.T) {
 
 func TestUserService_ChangePassword(t *testing.T) {
 	logger := zap.NewNop()
-	hashedPassword, _ := bcrypt.GenerateFromPassword([]byte("oldpassword"), bcrypt.DefaultCost)
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte("oldpassword"), bcrypt.DefaultCost)
+	require.NoError(t, err)
 
 	tests := []struct {
 		name        string
@@ -281,7 +299,7 @@ func TestUserService_ChangePassword(t *testing.T) {
 
 			svc := NewUserService(mockUserRepo, mockRoleRepo, logger)
 
-			err := svc.ChangePassword(context.Background(), tt.userID, tt.oldPassword, tt.newPassword)
+			err := svc.ChangePassword(t.Context(), tt.userID, tt.oldPassword, tt.newPassword)
 
 			if tt.wantErr {
 				assert.Error(t, err)
@@ -335,7 +353,7 @@ func TestUserService_Delete(t *testing.T) {
 
 			svc := NewUserService(mockUserRepo, mockRoleRepo, logger)
 
-			err := svc.Delete(context.Background(), tt.userID)
+			err := svc.Delete(t.Context(), tt.userID)
 
 			if tt.wantErr {
 				assert.Error(t, err)
@@ -362,7 +380,7 @@ func TestUserService_List(t *testing.T) {
 
 		svc := NewUserService(mockUserRepo, mockRoleRepo, logger)
 
-		users, total, err := svc.List(context.Background(), UserFilters{}, 1, 20)
+		users, total, err := svc.List(t.Context(), UserFilters{}, 1, 20)
 
 		assert.NoError(t, err)
 		assert.Equal(t, int64(2), total)
@@ -380,7 +398,7 @@ func TestUserService_List(t *testing.T) {
 
 		svc := NewUserService(mockUserRepo, mockRoleRepo, logger)
 
-		_, _, err := svc.List(context.Background(), UserFilters{}, 0, 20)
+		_, _, err := svc.List(t.Context(), UserFilters{}, 0, 20)
 
 		assert.NoError(t, err)
 		mockUserRepo.AssertExpectations(t)
@@ -394,7 +412,7 @@ func TestUserService_List(t *testing.T) {
 
 		svc := NewUserService(mockUserRepo, mockRoleRepo, logger)
 
-		_, _, err := svc.List(context.Background(), UserFilters{}, 1, 20)
+		_, _, err := svc.List(t.Context(), UserFilters{}, 1, 20)
 
 		assert.Error(t, err)
 		mockUserRepo.AssertExpectations(t)

@@ -53,7 +53,7 @@ func TestCORS(t *testing.T) {
 				c.Status(http.StatusOK)
 			})
 
-			req := httptest.NewRequest(tt.method, "/test", nil)
+			req := httptest.NewRequest(tt.method, "/test", http.NoBody)
 			req.Header.Set("Origin", tt.origin)
 			w := httptest.NewRecorder()
 
@@ -77,7 +77,7 @@ func TestSecureHeaders(t *testing.T) {
 			c.Status(http.StatusOK)
 		})
 
-		req := httptest.NewRequest("GET", "/test", nil)
+		req := httptest.NewRequest("GET", "/test", http.NoBody)
 		w := httptest.NewRecorder()
 
 		router.ServeHTTP(w, req)
@@ -98,7 +98,7 @@ func TestRecovery(t *testing.T) {
 			panic("test panic")
 		})
 
-		req := httptest.NewRequest("GET", "/panic", nil)
+		req := httptest.NewRequest("GET", "/panic", http.NoBody)
 		w := httptest.NewRecorder()
 
 		// Should not panic
@@ -125,7 +125,7 @@ func TestAuthMiddleware(t *testing.T) {
 			c.JSON(http.StatusOK, gin.H{"user_id": userID})
 		})
 
-		req := httptest.NewRequest("GET", "/protected", nil)
+		req := httptest.NewRequest("GET", "/protected", http.NoBody)
 		w := httptest.NewRecorder()
 
 		router.ServeHTTP(w, req)
@@ -152,7 +152,7 @@ func TestAuthMiddleware(t *testing.T) {
 			c.JSON(http.StatusOK, gin.H{"user_id": userID})
 		})
 
-		req := httptest.NewRequest("GET", "/protected", nil)
+		req := httptest.NewRequest("GET", "/protected", http.NoBody)
 		w := httptest.NewRecorder()
 
 		router.ServeHTTP(w, req)

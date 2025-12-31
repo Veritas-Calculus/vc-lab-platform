@@ -11,6 +11,7 @@ import (
 	"github.com/Veritas-Calculus/vc-lab-platform/internal/model"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -29,7 +30,11 @@ func (m *MockUserRepository) GetByID(ctx context.Context, id string) (*model.Use
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
-	return args.Get(0).(*model.User), args.Error(1)
+	user, ok := args.Get(0).(*model.User)
+	if !ok {
+		return nil, args.Error(1)
+	}
+	return user, args.Error(1)
 }
 
 func (m *MockUserRepository) GetByUsername(ctx context.Context, username string) (*model.User, error) {
@@ -37,7 +42,11 @@ func (m *MockUserRepository) GetByUsername(ctx context.Context, username string)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
-	return args.Get(0).(*model.User), args.Error(1)
+	user, ok := args.Get(0).(*model.User)
+	if !ok {
+		return nil, args.Error(1)
+	}
+	return user, args.Error(1)
 }
 
 func (m *MockUserRepository) GetByEmail(ctx context.Context, email string) (*model.User, error) {
@@ -45,7 +54,11 @@ func (m *MockUserRepository) GetByEmail(ctx context.Context, email string) (*mod
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
-	return args.Get(0).(*model.User), args.Error(1)
+	user, ok := args.Get(0).(*model.User)
+	if !ok {
+		return nil, args.Error(1)
+	}
+	return user, args.Error(1)
 }
 
 func (m *MockUserRepository) Update(ctx context.Context, user *model.User) error {
@@ -60,7 +73,15 @@ func (m *MockUserRepository) Delete(ctx context.Context, id string) error {
 
 func (m *MockUserRepository) List(ctx context.Context, offset, limit int) ([]*model.User, int64, error) {
 	args := m.Called(ctx, offset, limit)
-	return args.Get(0).([]*model.User), args.Get(1).(int64), args.Error(2)
+	users, ok := args.Get(0).([]*model.User)
+	if !ok {
+		return nil, 0, args.Error(2)
+	}
+	total, ok := args.Get(1).(int64)
+	if !ok {
+		return users, 0, args.Error(2)
+	}
+	return users, total, args.Error(2)
 }
 
 func (m *MockUserRepository) UpdateLastLogin(ctx context.Context, id, ip string) error {
@@ -69,7 +90,8 @@ func (m *MockUserRepository) UpdateLastLogin(ctx context.Context, id, ip string)
 }
 
 func TestAuthService_LoginUserLookup(t *testing.T) {
-	hashedPassword, _ := bcrypt.GenerateFromPassword([]byte("password123"), bcrypt.DefaultCost)
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte("password123"), bcrypt.DefaultCost)
+	require.NoError(t, err)
 
 	t.Run("successful user lookup", func(t *testing.T) {
 		mockRepo := new(MockUserRepository)
@@ -81,7 +103,7 @@ func TestAuthService_LoginUserLookup(t *testing.T) {
 			Status:       1,
 		}, nil)
 
-		ctx := context.Background()
+		ctx := t.Context()
 		user, err := mockRepo.GetByUsername(ctx, "testuser")
 
 		assert.NoError(t, err)
@@ -95,7 +117,7 @@ func TestAuthService_LoginUserLookup(t *testing.T) {
 		mockRepo := new(MockUserRepository)
 		mockRepo.On("GetByUsername", mock.Anything, "nonexistent").Return(nil, errors.New("not found"))
 
-		ctx := context.Background()
+		ctx := t.Context()
 		user, err := mockRepo.GetByUsername(ctx, "nonexistent")
 
 		assert.Error(t, err)
@@ -116,9 +138,10 @@ func TestAuthService_PasswordVerification(t *testing.T) {
 
 	t.Run("wrong password verification", func(t *testing.T) {
 		password := "password123"
-		hashedPassword, _ := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+		hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+		require.NoError(t, err)
 
-		err := bcrypt.CompareHashAndPassword(hashedPassword, []byte("wrongpassword"))
+		err = bcrypt.CompareHashAndPassword(hashedPassword, []byte("wrongpassword"))
 		assert.Error(t, err)
 	})
 }
@@ -158,7 +181,7 @@ func TestAuthService_ValidateToken(t *testing.T) {
 		for _, token := range invalidTokens {
 			// Token validation should fail for invalid formats
 			assert.NotEmpty(t, cfg.JWT.Secret)
-			assert.True(t, len(token) == 0 || len(token) < 50)
+			assert.True(t, token == "" || len(token) < 50)
 		}
 	})
 }
@@ -200,7 +223,7 @@ func TestAuthService_UpdateLastLogin(t *testing.T) {
 		mockRepo := new(MockUserRepository)
 		mockRepo.On("UpdateLastLogin", mock.Anything, "user-id-1", "127.0.0.1").Return(nil)
 
-		ctx := context.Background()
+		ctx := t.Context()
 		err := mockRepo.UpdateLastLogin(ctx, "user-id-1", "127.0.0.1")
 
 		assert.NoError(t, err)

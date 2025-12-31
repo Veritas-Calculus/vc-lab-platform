@@ -35,7 +35,7 @@ type WorkflowInstance struct {
 	BaseModel
 	WorkflowID  string     `gorm:"size:36;not null;index" json:"workflow_id"`
 	Workflow    *Workflow  `gorm:"foreignKey:WorkflowID" json:"workflow,omitempty"`
-	Status      string     `gorm:"size:20;not null;default:'pending'" json:"status"` // pending, running, completed, failed, cancelled
+	Status      string     `gorm:"size:20;not null;default:'pending'" json:"status"` // pending, running, completed, failed, canceled
 	CurrentStep int        `gorm:"not null;default:0" json:"current_step"`
 	TotalSteps  int        `gorm:"not null" json:"total_steps"`
 	Input       string     `gorm:"type:text" json:"input"`  // JSON

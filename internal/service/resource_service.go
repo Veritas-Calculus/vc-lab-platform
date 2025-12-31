@@ -6,6 +6,7 @@ import (
 	"errors"
 	"time"
 
+	"github.com/Veritas-Calculus/vc-lab-platform/internal/constants"
 	"github.com/Veritas-Calculus/vc-lab-platform/internal/model"
 	"github.com/Veritas-Calculus/vc-lab-platform/internal/repository"
 	"go.uber.org/zap"
@@ -143,10 +144,10 @@ func (s *resourceService) List(ctx context.Context, filters ResourceFilters, pag
 		page = 1
 	}
 	if pageSize < 1 {
-		pageSize = 20
+		pageSize = constants.DefaultPageSize
 	}
-	if pageSize > 100 {
-		pageSize = 100
+	if pageSize > constants.MaxPageSize {
+		pageSize = constants.MaxPageSize
 	}
 
 	offset := (page - 1) * pageSize
@@ -280,10 +281,10 @@ func (s *resourceService) ListRequests(ctx context.Context, filters RequestFilte
 		page = 1
 	}
 	if pageSize < 1 {
-		pageSize = 20
+		pageSize = constants.DefaultPageSize
 	}
-	if pageSize > 100 {
-		pageSize = 100
+	if pageSize > constants.MaxPageSize {
+		pageSize = constants.MaxPageSize
 	}
 
 	offset := (page - 1) * pageSize

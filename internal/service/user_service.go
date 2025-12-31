@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 
+	"github.com/Veritas-Calculus/vc-lab-platform/internal/constants"
 	"github.com/Veritas-Calculus/vc-lab-platform/internal/model"
 	"github.com/Veritas-Calculus/vc-lab-platform/internal/repository"
 	"go.uber.org/zap"
@@ -65,13 +66,19 @@ func (s *userService) Create(ctx context.Context, input *CreateUserInput) (*mode
 	}
 
 	// Check for existing email
-	existing, _ := s.userRepo.GetByEmail(ctx, input.Email)
+	existing, err := s.userRepo.GetByEmail(ctx, input.Email)
+	if err != nil && !errors.Is(err, repository.ErrNotFound) {
+		return nil, err
+	}
 	if existing != nil {
 		return nil, errors.New("email already exists")
 	}
 
 	// Check for existing username
-	existing, _ = s.userRepo.GetByUsername(ctx, input.Username)
+	existing, err = s.userRepo.GetByUsername(ctx, input.Username)
+	if err != nil && !errors.Is(err, repository.ErrNotFound) {
+		return nil, err
+	}
 	if existing != nil {
 		return nil, errors.New("username already exists")
 	}
@@ -142,10 +149,10 @@ func (s *userService) List(ctx context.Context, filters UserFilters, page, pageS
 		page = 1
 	}
 	if pageSize < 1 {
-		pageSize = 20
+		pageSize = constants.DefaultPageSize
 	}
-	if pageSize > 100 {
-		pageSize = 100
+	if pageSize > constants.MaxPageSize {
+		pageSize = constants.MaxPageSize
 	}
 
 	offset := (page - 1) * pageSize
@@ -223,7 +230,7 @@ func (s *userService) ChangePassword(ctx context.Context, id, oldPassword, newPa
 	if newPassword == "" {
 		return errors.New("new password cannot be empty")
 	}
-	if len(newPassword) < 8 {
+	if len(newPassword) < constants.MinPasswordLength {
 		return errors.New("password must be at least 8 characters")
 	}
 
@@ -236,7 +243,7 @@ func (s *userService) ChangePassword(ctx context.Context, id, oldPassword, newPa
 	}
 
 	// Verify old password
-	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(oldPassword)); err != nil {
+	if pwdErr := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(oldPassword)); pwdErr != nil {
 		return errors.New("incorrect password")
 	}
 
@@ -263,7 +270,7 @@ func (s *userService) ResetPassword(ctx context.Context, id, newPassword string)
 	if newPassword == "" {
 		return errors.New("new password cannot be empty")
 	}
-	if len(newPassword) < 8 {
+	if len(newPassword) < constants.MinPasswordLength {
 		return errors.New("password must be at least 8 characters")
 	}
 

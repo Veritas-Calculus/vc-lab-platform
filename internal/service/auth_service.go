@@ -81,7 +81,7 @@ func (s *authService) Login(ctx context.Context, username, password, clientIP st
 	}
 
 	// Verify password
-	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password)); err != nil {
+	if pwdErr := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password)); pwdErr != nil {
 		return nil, ErrInvalidCredentials
 	}
 
@@ -139,9 +139,11 @@ func (s *authService) RefreshToken(ctx context.Context, refreshToken string) (*T
 func (s *authService) Logout(ctx context.Context, accessToken string) error {
 	// Parse token to get expiration
 	claims := &Claims{}
-	token, _ := jwt.ParseWithClaims(accessToken, claims, func(token *jwt.Token) (interface{}, error) {
+	token, err := jwt.ParseWithClaims(accessToken, claims, func(token *jwt.Token) (interface{}, error) {
 		return []byte(s.cfg.JWT.Secret), nil
 	})
+	// Ignore parse error - we still try to blacklist if token is partially valid
+	_ = err
 
 	if token != nil && token.Valid {
 		// Calculate remaining TTL

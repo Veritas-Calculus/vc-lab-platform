@@ -6,6 +6,7 @@ import (
 	"io"
 	"time"
 
+	"github.com/Veritas-Calculus/vc-lab-platform/internal/constants"
 	"github.com/Veritas-Calculus/vc-lab-platform/internal/model"
 	"github.com/Veritas-Calculus/vc-lab-platform/internal/repository"
 	"github.com/gin-gonic/gin"
@@ -27,59 +28,72 @@ func NewAuditMiddleware(auditRepo repository.AuditRepository, logger *zap.Logger
 	}
 }
 
+// getStringFromContext safely extracts a string value from gin.Context.
+func getStringFromContext(c *gin.Context, key string) string {
+	value, exists := c.Get(key)
+	if !exists || value == nil {
+		return ""
+	}
+	if str, ok := value.(string); ok {
+		return str
+	}
+	return ""
+}
+
+// readRequestBody reads and restores the request body for logging.
+func (m *AuditMiddleware) readRequestBody(c *gin.Context) []byte {
+	if c.Request.Body == nil {
+		return nil
+	}
+	requestBody, err := io.ReadAll(c.Request.Body)
+	if err != nil {
+		m.logger.Warn("failed to read request body for audit", zap.Error(err))
+		return nil
+	}
+	c.Request.Body = io.NopCloser(bytes.NewBuffer(requestBody))
+	return requestBody
+}
+
+// isHealthCheckEndpoint checks if the request is for a health check endpoint.
+func isHealthCheckEndpoint(path string) bool {
+	return path == "/health" || path == "/ready"
+}
+
+// determineStatus returns the status string based on HTTP status code.
+func determineStatus(statusCode int) string {
+	if statusCode >= constants.HTTPStatusErrorMin {
+		return "failure"
+	}
+	return "success"
+}
+
 // Audit returns a middleware that logs API requests.
 func (m *AuditMiddleware) Audit() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		start := time.Now()
-
-		// Read request body
-		var requestBody []byte
-		if c.Request.Body != nil {
-			requestBody, _ = io.ReadAll(c.Request.Body)
-			c.Request.Body = io.NopCloser(bytes.NewBuffer(requestBody))
-		}
+		requestBody := m.readRequestBody(c)
 
 		// Process request
 		c.Next()
 
 		// Skip health check endpoints
-		if c.Request.URL.Path == "/health" || c.Request.URL.Path == "/ready" {
+		if isHealthCheckEndpoint(c.Request.URL.Path) {
 			return
 		}
 
-		// Get user info from context
-		userID, _ := c.Get("user_id")
-		username, _ := c.Get("username")
-
-		userIDStr := ""
-		if userID != nil {
-			userIDStr = userID.(string)
-		}
-		usernameStr := ""
-		if username != nil {
-			usernameStr = username.(string)
-		}
-
-		// Determine action from method
-		action := c.Request.Method
-		resource := c.Request.URL.Path
-
-		// Determine status
-		status := "success"
-		if c.Writer.Status() >= 400 {
-			status = "failure"
-		}
+		userIDStr := getStringFromContext(c, "user_id")
+		usernameStr := getStringFromContext(c, "username")
 
 		// Create audit log
 		auditLog := &model.AuditLog{
 			ID:        uuid.New().String(),
 			UserID:    userIDStr,
 			Username:  usernameStr,
-			Action:    action,
-			Resource:  resource,
+			Action:    c.Request.Method,
+			Resource:  c.Request.URL.Path,
 			IPAddress: c.ClientIP(),
 			UserAgent: c.Request.UserAgent(),
-			Status:    status,
+			Status:    determineStatus(c.Writer.Status()),
 			Details:   string(requestBody),
 			CreatedAt: time.Now(),
 		}

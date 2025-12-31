@@ -5,11 +5,25 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/Veritas-Calculus/vc-lab-platform/internal/constants"
 	"github.com/Veritas-Calculus/vc-lab-platform/internal/repository"
 	"github.com/Veritas-Calculus/vc-lab-platform/internal/service"
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 )
+
+// getUserID safely extracts user ID from context.
+func getUserID(c *gin.Context) string {
+	userID, ok := c.Get("user_id")
+	if !ok {
+		return ""
+	}
+	id, ok := userID.(string)
+	if !ok {
+		return ""
+	}
+	return id
+}
 
 // ResourceHandler handles resource management requests.
 type ResourceHandler struct {
@@ -28,10 +42,10 @@ func NewResourceHandler(resourceService service.ResourceService, logger *zap.Log
 // List handles listing resources.
 func (h *ResourceHandler) List(c *gin.Context) {
 	page := parseInt(c.DefaultQuery("page", "1"), 1)
-	pageSize := parseInt(c.DefaultQuery("page_size", "20"), 20)
+	pageSize := parseInt(c.DefaultQuery("page_size", "20"), constants.DefaultPageSize)
 
-	if pageSize > 100 {
-		pageSize = 100
+	if pageSize > constants.MaxPageSize {
+		pageSize = constants.MaxPageSize
 	}
 
 	filters := service.ResourceFilters{
@@ -78,7 +92,11 @@ func (h *ResourceHandler) Create(c *gin.Context) {
 		return
 	}
 
-	userID, _ := c.Get("user_id")
+	userIDStr := getUserID(c)
+	if userIDStr == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User ID not found"})
+		return
+	}
 
 	resource, err := h.resourceService.Create(c.Request.Context(), &service.CreateResourceInput{
 		Name:        req.Name,
@@ -87,7 +105,7 @@ func (h *ResourceHandler) Create(c *gin.Context) {
 		Environment: req.Environment,
 		Spec:        req.Spec,
 		Description: req.Description,
-		OwnerID:     userID.(string),
+		OwnerID:     userIDStr,
 	})
 	if err != nil {
 		h.logger.Error("failed to create resource", zap.Error(err))
@@ -172,10 +190,10 @@ func (h *ResourceHandler) Delete(c *gin.Context) {
 // ListRequests handles listing resource requests.
 func (h *ResourceHandler) ListRequests(c *gin.Context) {
 	page := parseInt(c.DefaultQuery("page", "1"), 1)
-	pageSize := parseInt(c.DefaultQuery("page_size", "20"), 20)
+	pageSize := parseInt(c.DefaultQuery("page_size", "20"), constants.DefaultPageSize)
 
-	if pageSize > 100 {
-		pageSize = 100
+	if pageSize > constants.MaxPageSize {
+		pageSize = constants.MaxPageSize
 	}
 
 	filters := service.RequestFilters{
@@ -220,7 +238,11 @@ func (h *ResourceHandler) CreateRequest(c *gin.Context) {
 		return
 	}
 
-	userID, _ := c.Get("user_id")
+	userIDStr := getUserID(c)
+	if userIDStr == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User ID not found"})
+		return
+	}
 
 	quantity := req.Quantity
 	if quantity < 1 {
@@ -234,7 +256,7 @@ func (h *ResourceHandler) CreateRequest(c *gin.Context) {
 		Provider:    req.Provider,
 		Spec:        req.Spec,
 		Quantity:    quantity,
-		RequesterID: userID.(string),
+		RequesterID: userIDStr,
 	})
 	if err != nil {
 		h.logger.Error("failed to create request", zap.Error(err))
@@ -281,11 +303,18 @@ func (h *ResourceHandler) ApproveRequest(c *gin.Context) {
 	}
 
 	var body ApproveRequestBody
-	c.ShouldBindJSON(&body)
+	// Reason is optional for approval, ignore binding errors
+	if err := c.ShouldBindJSON(&body); err != nil {
+		h.logger.Debug("no approval reason provided", zap.Error(err))
+	}
 
-	userID, _ := c.Get("user_id")
+	userIDStr := getUserID(c)
+	if userIDStr == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User ID not found"})
+		return
+	}
 
-	request, err := h.resourceService.ApproveRequest(c.Request.Context(), id, userID.(string), body.Reason)
+	request, err := h.resourceService.ApproveRequest(c.Request.Context(), id, userIDStr, body.Reason)
 	if err != nil {
 		if errors.Is(err, repository.ErrNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "Request not found"})
@@ -322,9 +351,13 @@ func (h *ResourceHandler) RejectRequest(c *gin.Context) {
 		return
 	}
 
-	userID, _ := c.Get("user_id")
+	userIDStr := getUserID(c)
+	if userIDStr == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User ID not found"})
+		return
+	}
 
-	request, err := h.resourceService.RejectRequest(c.Request.Context(), id, userID.(string), body.Reason)
+	request, err := h.resourceService.RejectRequest(c.Request.Context(), id, userIDStr, body.Reason)
 	if err != nil {
 		if errors.Is(err, repository.ErrNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "Request not found"})

@@ -12,6 +12,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func init() {
@@ -62,7 +63,8 @@ func TestXSSPrevention(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			req, _ := http.NewRequest("GET", "/test?input="+tc.input, nil)
+			req, err := http.NewRequestWithContext(t.Context(), "GET", "/test?input="+tc.input, http.NoBody)
+			require.NoError(t, err)
 			resp := httptest.NewRecorder()
 			router.ServeHTTP(resp, req)
 
@@ -86,7 +88,8 @@ func TestCSRFPrevention(t *testing.T) {
 	})
 
 	t.Run("Valid origin", func(t *testing.T) {
-		req, _ := http.NewRequest("POST", "/api/action", nil)
+		req, err := http.NewRequestWithContext(t.Context(), "POST", "/api/action", http.NoBody)
+		require.NoError(t, err)
 		req.Header.Set("Origin", "http://localhost")
 		resp := httptest.NewRecorder()
 		router.ServeHTTP(resp, req)
@@ -94,7 +97,8 @@ func TestCSRFPrevention(t *testing.T) {
 	})
 
 	t.Run("Invalid origin", func(t *testing.T) {
-		req, _ := http.NewRequest("POST", "/api/action", nil)
+		req, err := http.NewRequestWithContext(t.Context(), "POST", "/api/action", http.NoBody)
+		require.NoError(t, err)
 		req.Header.Set("Origin", "http://malicious.com")
 		resp := httptest.NewRecorder()
 		router.ServeHTTP(resp, req)
@@ -126,7 +130,8 @@ func TestJWTSecurityRequirements(t *testing.T) {
 
 	t.Run("None algorithm should be rejected", func(t *testing.T) {
 		// Test that tokens with "none" algorithm are rejected
-		noneAlgorithmToken := "eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ."
+		// This is an intentionally invalid test token for security testing
+		noneAlgorithmToken := "eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ." //nolint:gosec // Intentional test token
 
 		// The token should be rejected due to invalid algorithm
 		parts := strings.Split(noneAlgorithmToken, ".")
@@ -155,7 +160,8 @@ func TestPasswordSecurityRequirements(t *testing.T) {
 			c.JSON(http.StatusOK, user)
 		})
 
-		req, _ := http.NewRequest("GET", "/user", nil)
+		req, err := http.NewRequestWithContext(t.Context(), "GET", "/user", http.NoBody)
+		require.NoError(t, err)
 		resp := httptest.NewRecorder()
 		router.ServeHTTP(resp, req)
 
@@ -199,9 +205,11 @@ func TestInputValidation(t *testing.T) {
 
 	t.Run("Should reject empty username", func(t *testing.T) {
 		body := map[string]string{"email": "test@example.com"}
-		jsonBody, _ := json.Marshal(body)
+		jsonBody, err := json.Marshal(body)
+		require.NoError(t, err)
 
-		req, _ := http.NewRequest("POST", "/user", bytes.NewBuffer(jsonBody))
+		req, err := http.NewRequestWithContext(t.Context(), "POST", "/user", bytes.NewBuffer(jsonBody))
+		require.NoError(t, err)
 		req.Header.Set("Content-Type", "application/json")
 		resp := httptest.NewRecorder()
 		router.ServeHTTP(resp, req)
@@ -214,9 +222,11 @@ func TestInputValidation(t *testing.T) {
 			"username": "testuser",
 			"email":    "invalid-email",
 		}
-		jsonBody, _ := json.Marshal(body)
+		jsonBody, err := json.Marshal(body)
+		require.NoError(t, err)
 
-		req, _ := http.NewRequest("POST", "/user", bytes.NewBuffer(jsonBody))
+		req, err := http.NewRequestWithContext(t.Context(), "POST", "/user", bytes.NewBuffer(jsonBody))
+		require.NoError(t, err)
 		req.Header.Set("Content-Type", "application/json")
 		resp := httptest.NewRecorder()
 		router.ServeHTTP(resp, req)
@@ -229,9 +239,11 @@ func TestInputValidation(t *testing.T) {
 			"username": strings.Repeat("a", 100),
 			"email":    "test@example.com",
 		}
-		jsonBody, _ := json.Marshal(body)
+		jsonBody, err := json.Marshal(body)
+		require.NoError(t, err)
 
-		req, _ := http.NewRequest("POST", "/user", bytes.NewBuffer(jsonBody))
+		req, err := http.NewRequestWithContext(t.Context(), "POST", "/user", bytes.NewBuffer(jsonBody))
+		require.NoError(t, err)
 		req.Header.Set("Content-Type", "application/json")
 		resp := httptest.NewRecorder()
 		router.ServeHTTP(resp, req)
@@ -255,7 +267,8 @@ func TestSecureHeaders(t *testing.T) {
 		c.JSON(http.StatusOK, gin.H{"status": "ok"})
 	})
 
-	req, _ := http.NewRequest("GET", "/test", nil)
+	req, err := http.NewRequestWithContext(t.Context(), "GET", "/test", http.NoBody)
+	require.NoError(t, err)
 	resp := httptest.NewRecorder()
 	router.ServeHTTP(resp, req)
 
@@ -281,7 +294,8 @@ func TestPathTraversalPrevention(t *testing.T) {
 	for _, tc := range maliciousPaths {
 		t.Run("Should reject: "+tc.input, func(t *testing.T) {
 			// URL decode first, then check for path traversal patterns
-			decodedPath, _ := url.QueryUnescape(tc.input)
+			decodedPath, err := url.QueryUnescape(tc.input)
+			require.NoError(t, err)
 			containsTraversal := strings.Contains(decodedPath, "..") ||
 				strings.Contains(decodedPath, "..\\") ||
 				strings.Contains(decodedPath, "../")

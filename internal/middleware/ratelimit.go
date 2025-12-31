@@ -3,6 +3,7 @@ package middleware
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"time"
 
@@ -100,7 +101,7 @@ func (r *LoginRateLimiter) Limit() gin.HandlerFunc {
 
 		// Get current count
 		count, err := r.redis.Get(ctx, key).Int()
-		if err != nil && err != redis.Nil {
+		if err != nil && !errors.Is(err, redis.Nil) {
 			r.logger.Error("login rate limiter redis error", zap.Error(err))
 			c.Next()
 			return

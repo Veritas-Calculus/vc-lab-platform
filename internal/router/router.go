@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/Veritas-Calculus/vc-lab-platform/internal/config"
+	"github.com/Veritas-Calculus/vc-lab-platform/internal/constants"
 	"github.com/Veritas-Calculus/vc-lab-platform/internal/handler"
 	"github.com/Veritas-Calculus/vc-lab-platform/internal/middleware"
 	"github.com/Veritas-Calculus/vc-lab-platform/internal/repository"
@@ -42,7 +43,7 @@ func New(db *gorm.DB, rdb *redis.Client, logger *zap.Logger, cfg *config.Config)
 
 	// Initialize middleware
 	authMiddleware := middleware.NewAuthMiddleware(authService, logger)
-	rateLimiter := middleware.NewRateLimiter(rdb, logger, 100, time.Minute)
+	rateLimiter := middleware.NewRateLimiter(rdb, logger, constants.DefaultRateLimit, time.Minute)
 	auditMiddleware := middleware.NewAuditMiddleware(auditRepo, logger)
 
 	// Setup router
@@ -67,52 +68,43 @@ func New(db *gorm.DB, rdb *redis.Client, logger *zap.Logger, cfg *config.Config)
 
 	// Public routes
 	auth := v1.Group("/auth")
-	{
-		auth.POST("/login", authHandler.Login)
-		auth.POST("/refresh", authHandler.RefreshToken)
-	}
+	auth.POST("/login", authHandler.Login)
+	auth.POST("/refresh", authHandler.RefreshToken)
 
 	// Protected routes
 	protected := v1.Group("")
 	protected.Use(authMiddleware.Authenticate())
 	protected.Use(auditMiddleware.Audit())
-	{
-		// Auth routes
-		protected.POST("/auth/logout", authHandler.Logout)
 
-		// User routes
-		users := protected.Group("/users")
-		{
-			users.GET("", userHandler.List)
-			users.POST("", userHandler.Create)
-			users.GET("/me", userHandler.GetCurrentUser)
-			users.PUT("/me", userHandler.UpdateCurrentUser)
-			users.PUT("/me/password", userHandler.ChangePassword)
-			users.GET("/:id", userHandler.GetByID)
-			users.PUT("/:id", userHandler.Update)
-			users.DELETE("/:id", userHandler.Delete)
-		}
+	// Auth routes
+	protected.POST("/auth/logout", authHandler.Logout)
 
-		// Resource routes
-		resources := protected.Group("/resources")
-		{
-			resources.GET("", resourceHandler.List)
-			resources.POST("", resourceHandler.Create)
-			resources.GET("/:id", resourceHandler.GetByID)
-			resources.PUT("/:id", resourceHandler.Update)
-			resources.DELETE("/:id", resourceHandler.Delete)
-		}
+	// User routes
+	users := protected.Group("/users")
+	users.GET("", userHandler.List)
+	users.POST("", userHandler.Create)
+	users.GET("/me", userHandler.GetCurrentUser)
+	users.PUT("/me", userHandler.UpdateCurrentUser)
+	users.PUT("/me/password", userHandler.ChangePassword)
+	users.GET("/:id", userHandler.GetByID)
+	users.PUT("/:id", userHandler.Update)
+	users.DELETE("/:id", userHandler.Delete)
 
-		// Resource request routes
-		requests := protected.Group("/resource-requests")
-		{
-			requests.GET("", resourceHandler.ListRequests)
-			requests.POST("", resourceHandler.CreateRequest)
-			requests.GET("/:id", resourceHandler.GetRequest)
-			requests.POST("/:id/approve", resourceHandler.ApproveRequest)
-			requests.POST("/:id/reject", resourceHandler.RejectRequest)
-		}
-	}
+	// Resource routes
+	resources := protected.Group("/resources")
+	resources.GET("", resourceHandler.List)
+	resources.POST("", resourceHandler.Create)
+	resources.GET("/:id", resourceHandler.GetByID)
+	resources.PUT("/:id", resourceHandler.Update)
+	resources.DELETE("/:id", resourceHandler.Delete)
+
+	// Resource request routes
+	requests := protected.Group("/resource-requests")
+	requests.GET("", resourceHandler.ListRequests)
+	requests.POST("", resourceHandler.CreateRequest)
+	requests.GET("/:id", resourceHandler.GetRequest)
+	requests.POST("/:id/approve", resourceHandler.ApproveRequest)
+	requests.POST("/:id/reject", resourceHandler.RejectRequest)
 
 	return router
 }

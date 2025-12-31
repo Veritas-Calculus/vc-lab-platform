@@ -10,6 +10,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func init() {
@@ -66,7 +67,8 @@ func TestAuthHandler_Login(t *testing.T) {
 				c.JSON(http.StatusOK, gin.H{"message": "ok"})
 			})
 
-			body, _ := json.Marshal(tt.requestBody)
+			body, err := json.Marshal(tt.requestBody)
+			require.NoError(t, err)
 			req := httptest.NewRequest("POST", "/auth/login", bytes.NewBuffer(body))
 			req.Header.Set("Content-Type", "application/json")
 			w := httptest.NewRecorder()
@@ -111,7 +113,8 @@ func TestAuthHandler_RefreshToken(t *testing.T) {
 				c.JSON(http.StatusOK, gin.H{"message": "ok"})
 			})
 
-			body, _ := json.Marshal(tt.requestBody)
+			body, err := json.Marshal(tt.requestBody)
+			require.NoError(t, err)
 			req := httptest.NewRequest("POST", "/auth/refresh", bytes.NewBuffer(body))
 			req.Header.Set("Content-Type", "application/json")
 			w := httptest.NewRecorder()
@@ -137,13 +140,13 @@ func TestAuthHandler_Logout(t *testing.T) {
 		})
 
 		// Test without auth header
-		req := httptest.NewRequest("POST", "/auth/logout", nil)
+		req := httptest.NewRequest("POST", "/auth/logout", http.NoBody)
 		w := httptest.NewRecorder()
 		router.ServeHTTP(w, req)
 		assert.Equal(t, http.StatusUnauthorized, w.Code)
 
 		// Test with auth header
-		req = httptest.NewRequest("POST", "/auth/logout", nil)
+		req = httptest.NewRequest("POST", "/auth/logout", http.NoBody)
 		req.Header.Set("Authorization", "Bearer test-token")
 		w = httptest.NewRecorder()
 		router.ServeHTTP(w, req)
@@ -167,14 +170,15 @@ func TestUserHandler_List(t *testing.T) {
 			})
 		})
 
-		req := httptest.NewRequest("GET", "/users?page=1&page_size=10", nil)
+		req := httptest.NewRequest("GET", "/users?page=1&page_size=10", http.NoBody)
 		w := httptest.NewRecorder()
 		router.ServeHTTP(w, req)
 
 		assert.Equal(t, http.StatusOK, w.Code)
 
 		var response map[string]interface{}
-		json.Unmarshal(w.Body.Bytes(), &response)
+		err := json.Unmarshal(w.Body.Bytes(), &response)
+		require.NoError(t, err)
 		assert.Equal(t, "1", response["page"])
 		assert.Equal(t, "10", response["page_size"])
 	})
@@ -237,7 +241,8 @@ func TestUserHandler_Create(t *testing.T) {
 				c.JSON(http.StatusCreated, gin.H{"id": "new-user-id"})
 			})
 
-			body, _ := json.Marshal(tt.requestBody)
+			body, err := json.Marshal(tt.requestBody)
+			require.NoError(t, err)
 			req := httptest.NewRequest("POST", "/users", bytes.NewBuffer(body))
 			req.Header.Set("Content-Type", "application/json")
 			w := httptest.NewRecorder()
@@ -262,7 +267,7 @@ func TestUserHandler_GetByID(t *testing.T) {
 			c.JSON(http.StatusOK, gin.H{"id": id, "username": "testuser"})
 		})
 
-		req := httptest.NewRequest("GET", "/users/user-123", nil)
+		req := httptest.NewRequest("GET", "/users/user-123", http.NoBody)
 		w := httptest.NewRecorder()
 		router.ServeHTTP(w, req)
 
@@ -286,7 +291,7 @@ func TestResourceHandler_List(t *testing.T) {
 			})
 		})
 
-		req := httptest.NewRequest("GET", "/resources?type=vm&environment=dev", nil)
+		req := httptest.NewRequest("GET", "/resources?type=vm&environment=dev", http.NoBody)
 		w := httptest.NewRecorder()
 		router.ServeHTTP(w, req)
 
