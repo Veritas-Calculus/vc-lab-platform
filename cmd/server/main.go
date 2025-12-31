@@ -62,7 +62,9 @@ func main() {
 		return
 	}
 	defer func() {
-		_ = rdb.Close()
+		if closeErr := rdb.Close(); closeErr != nil {
+			log.Error("failed to close redis", zap.Error(closeErr))
+		}
 	}()
 
 	// Setup router

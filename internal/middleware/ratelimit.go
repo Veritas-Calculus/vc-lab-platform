@@ -21,9 +21,9 @@ type RateLimiter struct {
 }
 
 // NewRateLimiter creates a new rate limiter.
-func NewRateLimiter(redis *redis.Client, logger *zap.Logger, limit int, window time.Duration) *RateLimiter {
+func NewRateLimiter(rdb *redis.Client, logger *zap.Logger, limit int, window time.Duration) *RateLimiter {
 	return &RateLimiter{
-		redis:  redis,
+		redis:  rdb,
 		logger: logger,
 		limit:  limit,
 		window: window,
@@ -79,9 +79,9 @@ type LoginRateLimiter struct {
 }
 
 // NewLoginRateLimiter creates a new login rate limiter.
-func NewLoginRateLimiter(redis *redis.Client, logger *zap.Logger, limit int, window time.Duration) *LoginRateLimiter {
+func NewLoginRateLimiter(rdb *redis.Client, logger *zap.Logger, limit int, window time.Duration) *LoginRateLimiter {
 	return &LoginRateLimiter{
-		redis:  redis,
+		redis:  rdb,
 		logger: logger,
 		limit:  limit,
 		window: window,

@@ -1,3 +1,5 @@
+version: "2"
+
 run:
   timeout: 5m
   modules-download-mode: readonly
@@ -6,17 +8,21 @@ run:
 
 output:
   formats:
-    - format: colored-line-number
-  print-issued-lines: true
-  print-linter-name: true
+    text:
+      path: stdout
   sort-results: true
 
+formatters:
+  enable:
+    - gofmt
+    - goimports
+
 linters:
-  disable-all: true
+  disable:
+    - depguard
   enable:
     # Default linters
     - errcheck
-    - gosimple
     - govet
     - ineffassign
     - staticcheck
@@ -35,8 +41,6 @@ linters:
     - gocritic
     - gocyclo
     - godot
-    - gofmt
-    - goimports
     - mnd
     - goprintffuncname
     - gosec
@@ -52,111 +56,107 @@ linters:
     - revive
     - rowserrcheck
     - sqlclosecheck
-    - stylecheck
     - usetesting
     - tparallel
     - unconvert
     - unparam
     - wastedassign
     - whitespace
-
-linters-settings:
-  errcheck:
-    check-type-assertions: true
-    check-blank: true
-
-  govet:
-    enable-all: true
-    disable:
-      - fieldalignment
-
-  gocyclo:
-    min-complexity: 15
-
-  gocognit:
-    min-complexity: 20
-
-  dupl:
-    threshold: 150
-
-  goconst:
-    min-len: 3
-    min-occurrences: 3
-
-  misspell:
-    locale: US
-
-  mnd:
-    ignored-numbers:
-      - '0'
-      - '1'
-      - '2'
-    ignored-functions:
-      - 'strconv.Parse*'
-
-  revive:
+  exclusions:
     rules:
-      - name: blank-imports
-      - name: context-as-argument
-      - name: context-keys-type
-      - name: dot-imports
-      - name: error-return
-      - name: error-strings
-      - name: error-naming
-      - name: exported
-      - name: increment-decrement
-      - name: var-naming
-      - name: var-declaration
-      - name: package-comments
-      - name: range
-      - name: receiver-naming
-      - name: time-naming
-      - name: unexported-return
-      - name: indent-error-flow
-      - name: errorf
-      - name: empty-block
-      - name: superfluous-else
-      - name: unreachable-code
+      - path: '_test\.go'
+        linters:
+          - dupl
+  settings:
+    errcheck:
+      check-type-assertions: true
+      check-blank: true
 
-  gosec:
-    excludes:
-      - G104 # Audit errors not checked
-    config:
-      G306: "0644"
+    govet:
+      enable-all: true
+      disable:
+        - fieldalignment
 
-  gocritic:
-    enabled-tags:
-      - diagnostic
-      - experimental
-      - opinionated
-      - performance
-      - style
-    disabled-checks:
-      - hugeParam
-      - rangeValCopy
+    gocyclo:
+      min-complexity: 15
 
-  nestif:
-    min-complexity: 4
+    gocognit:
+      min-complexity: 20
 
-  stylecheck:
-    checks:
-      - all
-      - '-ST1000' # Package comments
-      - '-ST1003' # Underscores in names
+    dupl:
+      threshold: 150
+
+    goconst:
+      min-len: 3
+      min-occurrences: 3
+
+    misspell:
+      locale: US
+
+    mnd:
+      ignored-numbers:
+        - '0'
+        - '1'
+        - '2'
+      ignored-functions:
+        - 'strconv.Parse*'
+
+    revive:
+      rules:
+        - name: blank-imports
+        - name: context-as-argument
+        - name: context-keys-type
+        - name: dot-imports
+        - name: error-return
+        - name: error-strings
+        - name: error-naming
+        - name: exported
+        - name: increment-decrement
+        - name: var-naming
+        - name: var-declaration
+        - name: package-comments
+        - name: range
+        - name: receiver-naming
+        - name: time-naming
+        - name: unexported-return
+        - name: indent-error-flow
+        - name: errorf
+        - name: empty-block
+        - name: superfluous-else
+        - name: unreachable-code
+
+    gosec:
+      excludes:
+        - G104
+      config:
+        G306: "0644"
+
+    gocritic:
+      enabled-tags:
+        - diagnostic
+        - experimental
+        - opinionated
+        - performance
+        - style
+      disabled-checks:
+        - hugeParam
+        - rangeValCopy
+
+    nestif:
+      min-complexity: 4
+
+    staticcheck:
+      checks:
+        - all
+        - '-ST1000'
+        - '-ST1003'
 
 issues:
-  exclude-rules:
-    # Exclude dupl from test files (test cases often have similar structure)
-    - path: _test\.go
-      linters:
-        - dupl
-
   max-issues-per-linter: 50
   max-same-issues: 10
-  new: false
 
 severity:
-  default-severity: warning
+  default: warning
   rules:
     - linters:
         - gosec

@@ -103,7 +103,7 @@ func TestUserService_Create(t *testing.T) {
 				Password:    "password123",
 				DisplayName: "New User",
 			},
-			setupMock: func(ur *MockUserRepository, rr *MockRoleRepository) {
+			setupMock: func(ur *MockUserRepository, _ *MockRoleRepository) {
 				ur.On("GetByEmail", mock.Anything, "new@example.com").Return(nil, repository.ErrNotFound)
 				ur.On("GetByUsername", mock.Anything, "newuser").Return(nil, repository.ErrNotFound)
 				ur.On("Create", mock.Anything, mock.AnythingOfType("*model.User")).Return(nil)
@@ -117,7 +117,7 @@ func TestUserService_Create(t *testing.T) {
 				Email:    "existing@example.com",
 				Password: "password123",
 			},
-			setupMock: func(ur *MockUserRepository, rr *MockRoleRepository) {
+			setupMock: func(ur *MockUserRepository, _ *MockRoleRepository) {
 				ur.On("GetByEmail", mock.Anything, "existing@example.com").Return(&model.User{
 					BaseModel: model.BaseModel{ID: "existing-id"},
 					Email:     "existing@example.com",
@@ -133,7 +133,7 @@ func TestUserService_Create(t *testing.T) {
 				Email:    "new@example.com",
 				Password: "password123",
 			},
-			setupMock: func(ur *MockUserRepository, rr *MockRoleRepository) {
+			setupMock: func(ur *MockUserRepository, _ *MockRoleRepository) {
 				ur.On("GetByEmail", mock.Anything, "new@example.com").Return(nil, repository.ErrNotFound)
 				ur.On("GetByUsername", mock.Anything, "existinguser").Return(&model.User{
 					BaseModel: model.BaseModel{ID: "existing-id"},
@@ -146,7 +146,7 @@ func TestUserService_Create(t *testing.T) {
 		{
 			name:      "nil input",
 			input:     nil,
-			setupMock: func(ur *MockUserRepository, rr *MockRoleRepository) {},
+			setupMock: func(_ *MockUserRepository, _ *MockRoleRepository) {},
 			wantErr:   true,
 			errMsg:    "input cannot be nil",
 		},
@@ -209,7 +209,7 @@ func TestUserService_GetByID(t *testing.T) {
 		{
 			name:      "empty user ID",
 			userID:    "",
-			setupMock: func(m *MockUserRepository) {},
+			setupMock: func(_ *MockUserRepository) {},
 			wantErr:   true,
 		},
 	}
@@ -285,7 +285,7 @@ func TestUserService_ChangePassword(t *testing.T) {
 			userID:      "user-123",
 			oldPassword: "oldpassword",
 			newPassword: "short",
-			setupMock:   func(m *MockUserRepository) {},
+			setupMock:   func(_ *MockUserRepository) {},
 			wantErr:     true,
 			errMsg:      "at least 8 characters",
 		},

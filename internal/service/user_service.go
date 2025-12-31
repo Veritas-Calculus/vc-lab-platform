@@ -144,7 +144,7 @@ func (s *userService) GetByUsername(ctx context.Context, username string) (*mode
 }
 
 // List lists users with filters and pagination.
-func (s *userService) List(ctx context.Context, filters UserFilters, page, pageSize int) ([]*model.User, int64, error) {
+func (s *userService) List(ctx context.Context, _ UserFilters, page, pageSize int) ([]*model.User, int64, error) {
 	if page < 1 {
 		page = 1
 	}

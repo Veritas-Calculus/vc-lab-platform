@@ -139,7 +139,7 @@ func (s *authService) RefreshToken(ctx context.Context, refreshToken string) (*T
 func (s *authService) Logout(ctx context.Context, accessToken string) error {
 	// Parse token to get expiration
 	claims := &Claims{}
-	token, err := jwt.ParseWithClaims(accessToken, claims, func(token *jwt.Token) (interface{}, error) {
+	token, err := jwt.ParseWithClaims(accessToken, claims, func(_ *jwt.Token) (interface{}, error) {
 		return []byte(s.cfg.JWT.Secret), nil
 	})
 	// Ignore parse error - we still try to blacklist if token is partially valid

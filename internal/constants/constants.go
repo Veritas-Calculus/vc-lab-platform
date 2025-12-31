@@ -28,4 +28,5 @@ const (
 	MinPasswordLength  = 8
 	HTTPStatusErrorMin = 400
 	DefaultRateLimit   = 100
+	BearerParts        = 2 // "Bearer" + token
 )

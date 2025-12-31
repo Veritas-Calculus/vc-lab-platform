@@ -94,7 +94,7 @@ func TestRecovery(t *testing.T) {
 		logger := zap.NewNop()
 		router := gin.New()
 		router.Use(Recovery(logger))
-		router.GET("/panic", func(c *gin.Context) {
+		router.GET("/panic", func(_ *gin.Context) {
 			panic("test panic")
 		})
 
