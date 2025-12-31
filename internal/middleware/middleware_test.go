@@ -60,7 +60,7 @@ func TestCORS(t *testing.T) {
 			router.ServeHTTP(w, req)
 
 			assert.Equal(t, tt.expectedStatus, w.Code)
-			
+
 			// Check CORS headers
 			if tt.origin != "" {
 				assert.NotEmpty(t, w.Header().Get("Access-Control-Allow-Origin"))
@@ -114,7 +114,7 @@ func TestAuthMiddleware(t *testing.T) {
 	t.Run("should reject requests without auth header", func(t *testing.T) {
 		// This test verifies the auth middleware rejects unauthenticated requests
 		router := gin.New()
-		
+
 		// Create a mock handler that requires auth
 		router.GET("/protected", func(c *gin.Context) {
 			userID, exists := c.Get("user_id")
@@ -136,13 +136,13 @@ func TestAuthMiddleware(t *testing.T) {
 
 	t.Run("should accept requests with valid auth context", func(t *testing.T) {
 		router := gin.New()
-		
+
 		// Simulate middleware setting user_id
 		router.Use(func(c *gin.Context) {
 			c.Set("user_id", "test-user-id")
 			c.Next()
 		})
-		
+
 		router.GET("/protected", func(c *gin.Context) {
 			userID, exists := c.Get("user_id")
 			if !exists {

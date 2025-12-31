@@ -108,7 +108,7 @@ func TestJWTSecurityRequirements(t *testing.T) {
 		// HS256 or RS256 are acceptable
 		acceptableAlgorithms := []string{"HS256", "HS384", "HS512", "RS256", "RS384", "RS512", "ES256", "ES384", "ES512"}
 		usedAlgorithm := "HS256" // Our implementation uses HS256
-		
+
 		found := false
 		for _, alg := range acceptableAlgorithms {
 			if alg == usedAlgorithm {
@@ -127,7 +127,7 @@ func TestJWTSecurityRequirements(t *testing.T) {
 	t.Run("None algorithm should be rejected", func(t *testing.T) {
 		// Test that tokens with "none" algorithm are rejected
 		noneAlgorithmToken := "eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ."
-		
+
 		// The token should be rejected due to invalid algorithm
 		parts := strings.Split(noneAlgorithmToken, ".")
 		assert.Equal(t, 3, len(parts), "Token should have three parts")
@@ -139,7 +139,7 @@ func TestPasswordSecurityRequirements(t *testing.T) {
 	t.Run("Password should not be logged", func(t *testing.T) {
 		password := "secret123"
 		logOutput := "User testuser attempted login"
-		
+
 		assert.NotContains(t, logOutput, password, "Password should never appear in logs")
 	})
 
@@ -166,7 +166,7 @@ func TestPasswordSecurityRequirements(t *testing.T) {
 	t.Run("Password minimum length requirement", func(t *testing.T) {
 		minLength := 8
 		shortPassword := "short"
-		
+
 		assert.Less(t, len(shortPassword), minLength, "Short passwords should be rejected")
 	})
 }
@@ -177,7 +177,7 @@ func TestRateLimitingRequirements(t *testing.T) {
 		// This is a conceptual test - actual implementation uses Redis
 		maxAttempts := 5
 		attempts := 10
-		
+
 		assert.Greater(t, attempts, maxAttempts, "Excessive attempts should trigger rate limiting")
 	})
 }
@@ -200,7 +200,7 @@ func TestInputValidation(t *testing.T) {
 	t.Run("Should reject empty username", func(t *testing.T) {
 		body := map[string]string{"email": "test@example.com"}
 		jsonBody, _ := json.Marshal(body)
-		
+
 		req, _ := http.NewRequest("POST", "/user", bytes.NewBuffer(jsonBody))
 		req.Header.Set("Content-Type", "application/json")
 		resp := httptest.NewRecorder()
@@ -215,7 +215,7 @@ func TestInputValidation(t *testing.T) {
 			"email":    "invalid-email",
 		}
 		jsonBody, _ := json.Marshal(body)
-		
+
 		req, _ := http.NewRequest("POST", "/user", bytes.NewBuffer(jsonBody))
 		req.Header.Set("Content-Type", "application/json")
 		resp := httptest.NewRecorder()
@@ -230,7 +230,7 @@ func TestInputValidation(t *testing.T) {
 			"email":    "test@example.com",
 		}
 		jsonBody, _ := json.Marshal(body)
-		
+
 		req, _ := http.NewRequest("POST", "/user", bytes.NewBuffer(jsonBody))
 		req.Header.Set("Content-Type", "application/json")
 		resp := httptest.NewRecorder()
@@ -298,9 +298,9 @@ func TestSessionSecurityRequirements(t *testing.T) {
 	})
 
 	t.Run("Session should have timeout", func(t *testing.T) {
-		accessTokenExpiry := 15  // minutes
+		accessTokenExpiry := 15   // minutes
 		refreshTokenExpiry := 168 // hours (7 days)
-		
+
 		assert.LessOrEqual(t, accessTokenExpiry, 60, "Access token should expire within reasonable time")
 		assert.LessOrEqual(t, refreshTokenExpiry, 336, "Refresh token should expire within 2 weeks")
 	})

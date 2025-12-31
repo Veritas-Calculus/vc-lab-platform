@@ -54,7 +54,7 @@ func TestAuthHandler_Login(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			router := gin.New()
-			
+
 			// Simple handler that validates request format
 			router.POST("/auth/login", func(c *gin.Context) {
 				var req LoginRequest
@@ -101,7 +101,7 @@ func TestAuthHandler_RefreshToken(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			router := gin.New()
-			
+
 			router.POST("/auth/refresh", func(c *gin.Context) {
 				var req RefreshTokenRequest
 				if err := c.ShouldBindJSON(&req); err != nil {
@@ -126,7 +126,7 @@ func TestAuthHandler_RefreshToken(t *testing.T) {
 func TestAuthHandler_Logout(t *testing.T) {
 	t.Run("logout requires authorization header", func(t *testing.T) {
 		router := gin.New()
-		
+
 		router.POST("/auth/logout", func(c *gin.Context) {
 			authHeader := c.GetHeader("Authorization")
 			if authHeader == "" {
@@ -154,11 +154,11 @@ func TestAuthHandler_Logout(t *testing.T) {
 func TestUserHandler_List(t *testing.T) {
 	t.Run("list users with pagination", func(t *testing.T) {
 		router := gin.New()
-		
+
 		router.GET("/users", func(c *gin.Context) {
 			page := c.DefaultQuery("page", "1")
 			pageSize := c.DefaultQuery("page_size", "20")
-			
+
 			c.JSON(http.StatusOK, gin.H{
 				"users":     []interface{}{},
 				"total":     0,
@@ -172,7 +172,7 @@ func TestUserHandler_List(t *testing.T) {
 		router.ServeHTTP(w, req)
 
 		assert.Equal(t, http.StatusOK, w.Code)
-		
+
 		var response map[string]interface{}
 		json.Unmarshal(w.Body.Bytes(), &response)
 		assert.Equal(t, "1", response["page"])
@@ -227,7 +227,7 @@ func TestUserHandler_Create(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			router := gin.New()
-			
+
 			router.POST("/users", func(c *gin.Context) {
 				var req CreateUserRequest
 				if err := c.ShouldBindJSON(&req); err != nil {
@@ -252,7 +252,7 @@ func TestUserHandler_Create(t *testing.T) {
 func TestUserHandler_GetByID(t *testing.T) {
 	t.Run("get user by ID", func(t *testing.T) {
 		router := gin.New()
-		
+
 		router.GET("/users/:id", func(c *gin.Context) {
 			id := c.Param("id")
 			if id == "" {
@@ -273,11 +273,11 @@ func TestUserHandler_GetByID(t *testing.T) {
 func TestResourceHandler_List(t *testing.T) {
 	t.Run("list resources with filters", func(t *testing.T) {
 		router := gin.New()
-		
+
 		router.GET("/resources", func(c *gin.Context) {
 			resourceType := c.Query("type")
 			environment := c.Query("environment")
-			
+
 			c.JSON(http.StatusOK, gin.H{
 				"resources":   []interface{}{},
 				"total":       0,

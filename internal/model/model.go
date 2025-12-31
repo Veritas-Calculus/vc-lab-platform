@@ -27,16 +27,16 @@ func (b *BaseModel) BeforeCreate(_ *gorm.DB) error {
 // User represents a platform user.
 type User struct {
 	BaseModel
-	Username     string  `gorm:"type:varchar(64);uniqueIndex;not null" json:"username"`
-	Email        string  `gorm:"type:varchar(255);uniqueIndex;not null" json:"email"`
-	PasswordHash string  `gorm:"type:varchar(255);not null" json:"-"`
-	DisplayName  string  `gorm:"type:varchar(128)" json:"display_name"`
-	Phone        string  `gorm:"type:varchar(20)" json:"phone"`
-	Avatar       string  `gorm:"type:varchar(512)" json:"avatar"`
-	Status       int8    `gorm:"type:tinyint;default:1;not null" json:"status"` // 0: disabled, 1: active
+	Username     string     `gorm:"type:varchar(64);uniqueIndex;not null" json:"username"`
+	Email        string     `gorm:"type:varchar(255);uniqueIndex;not null" json:"email"`
+	PasswordHash string     `gorm:"type:varchar(255);not null" json:"-"`
+	DisplayName  string     `gorm:"type:varchar(128)" json:"display_name"`
+	Phone        string     `gorm:"type:varchar(20)" json:"phone"`
+	Avatar       string     `gorm:"type:varchar(512)" json:"avatar"`
+	Status       int8       `gorm:"type:tinyint;default:1;not null" json:"status"` // 0: disabled, 1: active
 	LastLoginAt  *time.Time `json:"last_login_at"`
-	LastLoginIP  string  `gorm:"type:varchar(45)" json:"last_login_ip"`
-	Roles        []Role  `gorm:"many2many:user_roles;" json:"roles,omitempty"`
+	LastLoginIP  string     `gorm:"type:varchar(45)" json:"last_login_ip"`
+	Roles        []Role     `gorm:"many2many:user_roles;" json:"roles,omitempty"`
 }
 
 // TableName returns the table name for User.
@@ -79,20 +79,20 @@ func (Permission) TableName() string {
 // Resource represents a computing resource (VM, container, etc.).
 type Resource struct {
 	BaseModel
-	Name          string    `gorm:"type:varchar(128);not null" json:"name"`
-	Type          string    `gorm:"type:varchar(32);not null" json:"type"` // vm, container, bare_metal
-	Provider      string    `gorm:"type:varchar(32);not null" json:"provider"` // pve, vmware, openstack
-	Status        string    `gorm:"type:varchar(32);not null;default:'pending'" json:"status"` // pending, provisioning, running, stopped, error
-	Spec          string    `gorm:"type:json" json:"spec"` // CPU, memory, disk specs as JSON
-	IPAddress     string    `gorm:"type:varchar(45)" json:"ip_address"`
-	HostName      string    `gorm:"type:varchar(255)" json:"hostname"`
-	OwnerID       string    `gorm:"type:char(36);index;not null" json:"owner_id"`
-	Owner         *User     `gorm:"foreignKey:OwnerID" json:"owner,omitempty"`
-	Environment   string    `gorm:"type:varchar(32);index;not null" json:"environment"` // dev, test, staging, prod
-	ExternalID    string    `gorm:"type:varchar(255)" json:"external_id"` // ID in the external provider
-	ExpiresAt     *time.Time `json:"expires_at"`
-	Tags          string    `gorm:"type:json" json:"tags"` // JSON array of tags
-	Description   string    `gorm:"type:text" json:"description"`
+	Name        string     `gorm:"type:varchar(128);not null" json:"name"`
+	Type        string     `gorm:"type:varchar(32);not null" json:"type"`                     // vm, container, bare_metal
+	Provider    string     `gorm:"type:varchar(32);not null" json:"provider"`                 // pve, vmware, openstack
+	Status      string     `gorm:"type:varchar(32);not null;default:'pending'" json:"status"` // pending, provisioning, running, stopped, error
+	Spec        string     `gorm:"type:json" json:"spec"`                                     // CPU, memory, disk specs as JSON
+	IPAddress   string     `gorm:"type:varchar(45)" json:"ip_address"`
+	HostName    string     `gorm:"type:varchar(255)" json:"hostname"`
+	OwnerID     string     `gorm:"type:char(36);index;not null" json:"owner_id"`
+	Owner       *User      `gorm:"foreignKey:OwnerID" json:"owner,omitempty"`
+	Environment string     `gorm:"type:varchar(32);index;not null" json:"environment"` // dev, test, staging, prod
+	ExternalID  string     `gorm:"type:varchar(255)" json:"external_id"`               // ID in the external provider
+	ExpiresAt   *time.Time `json:"expires_at"`
+	Tags        string     `gorm:"type:json" json:"tags"` // JSON array of tags
+	Description string     `gorm:"type:text" json:"description"`
 }
 
 // TableName returns the table name for Resource.
@@ -102,13 +102,13 @@ func (Resource) TableName() string {
 
 // ResourceSpec represents the specification for a resource.
 type ResourceSpec struct {
-	CPU       int    `json:"cpu"`        // Number of CPU cores
-	Memory    int    `json:"memory"`     // Memory in MB
-	Disk      int    `json:"disk"`       // Disk size in GB
-	DiskType  string `json:"disk_type"`  // ssd, hdd
-	OSType    string `json:"os_type"`    // linux, windows
-	OSImage   string `json:"os_image"`   // ubuntu-22.04, centos-7, etc.
-	Network   string `json:"network"`    // Network configuration
+	CPU      int    `json:"cpu"`       // Number of CPU cores
+	Memory   int    `json:"memory"`    // Memory in MB
+	Disk     int    `json:"disk"`      // Disk size in GB
+	DiskType string `json:"disk_type"` // ssd, hdd
+	OSType   string `json:"os_type"`   // linux, windows
+	OSImage  string `json:"os_image"`  // ubuntu-22.04, centos-7, etc.
+	Network  string `json:"network"`   // Network configuration
 }
 
 // ResourceRequest represents a resource request/application.
@@ -137,17 +137,17 @@ func (ResourceRequest) TableName() string {
 
 // AuditLog represents an audit log entry.
 type AuditLog struct {
-	ID        string    `gorm:"type:char(36);primaryKey" json:"id"`
-	UserID    string    `gorm:"type:char(36);index" json:"user_id"`
-	Username  string    `gorm:"type:varchar(64)" json:"username"`
-	Action    string    `gorm:"type:varchar(64);not null" json:"action"`
-	Resource  string    `gorm:"type:varchar(64);not null" json:"resource"`
-	ResourceID string   `gorm:"type:varchar(255)" json:"resource_id"`
-	Details   string    `gorm:"type:json" json:"details"`
-	IPAddress string    `gorm:"type:varchar(45)" json:"ip_address"`
-	UserAgent string    `gorm:"type:varchar(512)" json:"user_agent"`
-	Status    string    `gorm:"type:varchar(32);not null" json:"status"` // success, failure
-	CreatedAt time.Time `gorm:"index" json:"created_at"`
+	ID         string    `gorm:"type:char(36);primaryKey" json:"id"`
+	UserID     string    `gorm:"type:char(36);index" json:"user_id"`
+	Username   string    `gorm:"type:varchar(64)" json:"username"`
+	Action     string    `gorm:"type:varchar(64);not null" json:"action"`
+	Resource   string    `gorm:"type:varchar(64);not null" json:"resource"`
+	ResourceID string    `gorm:"type:varchar(255)" json:"resource_id"`
+	Details    string    `gorm:"type:json" json:"details"`
+	IPAddress  string    `gorm:"type:varchar(45)" json:"ip_address"`
+	UserAgent  string    `gorm:"type:varchar(512)" json:"user_agent"`
+	Status     string    `gorm:"type:varchar(32);not null" json:"status"` // success, failure
+	CreatedAt  time.Time `gorm:"index" json:"created_at"`
 }
 
 // TableName returns the table name for AuditLog.

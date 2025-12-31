@@ -83,7 +83,7 @@ func TestAuthService_LoginUserLookup(t *testing.T) {
 
 		ctx := context.Background()
 		user, err := mockRepo.GetByUsername(ctx, "testuser")
-		
+
 		assert.NoError(t, err)
 		assert.NotNil(t, user)
 		assert.Equal(t, "testuser", user.Username)
@@ -97,7 +97,7 @@ func TestAuthService_LoginUserLookup(t *testing.T) {
 
 		ctx := context.Background()
 		user, err := mockRepo.GetByUsername(ctx, "nonexistent")
-		
+
 		assert.Error(t, err)
 		assert.Nil(t, user)
 		mockRepo.AssertExpectations(t)
