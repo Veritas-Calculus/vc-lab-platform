@@ -163,7 +163,8 @@ export interface CreateResourceRequestReq {
 }
 
 // Pagination types
-export interface PaginatedResponse<T> {
+export interface PaginatedResponse<T = unknown> {
+  data?: T[];
   total: number;
   page: number;
   page_size: number;
