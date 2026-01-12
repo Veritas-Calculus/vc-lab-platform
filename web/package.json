@@ -23,8 +23,8 @@
     "clsx": "^2.1.1",
     "react": "^19.2.3",
     "react-dom": "^19.2.3",
-    "react-hook-form": "^7.58.0",
-    "react-router-dom": "^7.11.0",
+    "react-hook-form": "^7.71.0",
+    "react-router-dom": "^7.12.0",
     "zustand": "^5.0.9"
   },
   "devDependencies": {
@@ -32,7 +32,7 @@
     "@testing-library/jest-dom": "^6.6.3",
     "@testing-library/react": "^16.3.1",
     "@testing-library/user-event": "^14.6.1",
-    "@types/react": "^19.2.7",
+    "@types/react": "^19.2.8",
     "@types/react-dom": "^19.2.3",
     "@typescript-eslint/eslint-plugin": "^8.51.0",
     "@typescript-eslint/parser": "^8.51.0",
