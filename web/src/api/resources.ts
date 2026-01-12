@@ -135,4 +135,19 @@ export const resourceRequestApi = {
     });
     return response.data;
   },
+
+  /**
+   * Retry a failed resource request.
+   */
+  async retry(id: string): Promise<ResourceRequest> {
+    const response = await apiClient.post<ResourceRequest>(`/resource-requests/${id}/retry`);
+    return response.data;
+  },
+
+  /**
+   * Delete a resource request.
+   */
+  async delete(id: string): Promise<void> {
+    await apiClient.delete(`/resource-requests/${id}`);
+  },
 };

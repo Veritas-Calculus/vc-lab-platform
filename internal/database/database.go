@@ -8,7 +8,6 @@ import (
 
 	"github.com/Veritas-Calculus/vc-lab-platform/internal/config"
 	"github.com/Veritas-Calculus/vc-lab-platform/internal/constants"
-	"github.com/go-redis/redis/v8"
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
@@ -44,22 +43,4 @@ func New(cfg config.DatabaseConfig) (*gorm.DB, error) {
 	}
 
 	return db, nil
-}
-
-// NewRedis creates a new Redis client.
-func NewRedis(cfg config.RedisConfig) (*redis.Client, error) {
-	rdb := redis.NewClient(&redis.Options{
-		Addr:     cfg.Addr,
-		Password: cfg.Password,
-		DB:       cfg.DB,
-	})
-
-	ctx, cancel := context.WithTimeout(context.Background(), constants.DBConnectionTimeout)
-	defer cancel()
-
-	if err := rdb.Ping(ctx).Err(); err != nil {
-		return nil, fmt.Errorf("failed to connect to redis: %w", err)
-	}
-
-	return rdb, nil
 }

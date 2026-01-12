@@ -31,8 +31,6 @@ database:
   user: "root"
   password: "password"
   dbname: "test_db"
-redis:
-  addr: "localhost:6379"
 jwt:
   secret: "this-is-a-very-long-secret-key-for-testing"
   access_token_ttl: 60

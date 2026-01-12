@@ -5,3 +5,6 @@ export { default as RolesPage } from './RolesPage';
 export { default as ResourcesPage } from './ResourcesPage';
 export { default as ResourceRequestsPage } from './ResourceRequestsPage';
 export { default as NotFoundPage } from './NotFoundPage';
+export { default as SSHKeysPage } from './SSHKeysPage';
+export { default as IPAMPage } from './IPAMPage';
+export { default as VMTemplatesPage } from './VMTemplatesPage';

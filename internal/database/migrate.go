@@ -15,5 +15,18 @@ func AutoMigrate(db *gorm.DB) error {
 		&model.Resource{},
 		&model.ResourceRequest{},
 		&model.AuditLog{},
+		&model.ProviderConfig{},
+		&model.Credential{},
+		&model.TerraformRegistry{},
+		&model.TerraformProvider{},
+		&model.TerraformModule{},
+		&model.Region{},
+		&model.Zone{},
+		&model.GitRepository{},
+		&model.NodeConfig{},
+		&model.SSHKey{},
+		&model.IPPool{},
+		&model.IPAllocation{},
+		&model.VMTemplate{},
 	)
 }

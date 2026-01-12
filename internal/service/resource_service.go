@@ -3,12 +3,16 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/Veritas-Calculus/vc-lab-platform/internal/constants"
 	"github.com/Veritas-Calculus/vc-lab-platform/internal/model"
+	"github.com/Veritas-Calculus/vc-lab-platform/internal/notification"
 	"github.com/Veritas-Calculus/vc-lab-platform/internal/repository"
+	"github.com/Veritas-Calculus/vc-lab-platform/internal/terraform"
 	"go.uber.org/zap"
 )
 
@@ -30,20 +34,32 @@ type ResourceService interface {
 	ListRequests(ctx context.Context, filters RequestFilters, page, pageSize int) ([]*model.ResourceRequest, int64, error)
 	ApproveRequest(ctx context.Context, id, approverID, reason string) (*model.ResourceRequest, error)
 	RejectRequest(ctx context.Context, id, approverID, reason string) (*model.ResourceRequest, error)
+	RetryRequest(ctx context.Context, id, userID string) (*model.ResourceRequest, error)
+	DeleteRequest(ctx context.Context, id, userID string) error
 }
 
 // resourceService implements ResourceService.
 type resourceService struct {
 	resourceRepo        repository.ResourceRepository
 	resourceRequestRepo repository.ResourceRequestRepository
+	terraformExecutor   *terraform.Executor
+	notificationService notification.Service
 	logger              *zap.Logger
 }
 
 // NewResourceService creates a new resource service.
-func NewResourceService(resourceRepo repository.ResourceRepository, resourceRequestRepo repository.ResourceRequestRepository, logger *zap.Logger) ResourceService {
+func NewResourceService(
+	resourceRepo repository.ResourceRepository,
+	resourceRequestRepo repository.ResourceRequestRepository,
+	terraformExecutor *terraform.Executor,
+	notificationService notification.Service,
+	logger *zap.Logger,
+) ResourceService {
 	return &resourceService{
 		resourceRepo:        resourceRepo,
 		resourceRequestRepo: resourceRequestRepo,
+		terraformExecutor:   terraformExecutor,
+		notificationService: notificationService,
 		logger:              logger,
 	}
 }
@@ -70,13 +86,19 @@ type ResourceFilters struct {
 
 // CreateRequestInput represents input for resource request creation.
 type CreateRequestInput struct {
-	Title       string
-	Description string
-	Environment string
-	Provider    string
-	Spec        string
-	Quantity    int
-	RequesterID string
+	Title        string
+	Description  string
+	Type         string // vm, container, bare_metal
+	Environment  string
+	Provider     string
+	RegionID     *string
+	ZoneID       *string
+	TfProviderID *string // Selected Terraform provider
+	TfModuleID   *string // Selected Terraform module
+	CredentialID *string // Selected credential for access
+	Spec         string
+	Quantity     int
+	RequesterID  string
 }
 
 // RequestFilters represents filters for request listing.
@@ -237,16 +259,25 @@ func (s *resourceService) CreateRequest(ctx context.Context, input *CreateReques
 	if input.RequesterID == "" {
 		return nil, errors.New("requester ID is required")
 	}
+	if input.Type == "" {
+		return nil, errors.New("type is required")
+	}
 
 	request := &model.ResourceRequest{
-		Title:       input.Title,
-		Description: input.Description,
-		Environment: input.Environment,
-		Provider:    input.Provider,
-		Spec:        input.Spec,
-		Quantity:    input.Quantity,
-		RequesterID: input.RequesterID,
-		Status:      "pending",
+		Title:        input.Title,
+		Description:  input.Description,
+		Type:         input.Type,
+		Environment:  input.Environment,
+		Provider:     input.Provider,
+		RegionID:     input.RegionID,
+		ZoneID:       input.ZoneID,
+		TfProviderID: input.TfProviderID,
+		TfModuleID:   input.TfModuleID,
+		CredentialID: input.CredentialID,
+		Spec:         input.Spec,
+		Quantity:     input.Quantity,
+		RequesterID:  input.RequesterID,
+		Status:       "pending",
 	}
 
 	if err := s.resourceRequestRepo.Create(ctx, request); err != nil {
@@ -298,7 +329,7 @@ func (s *resourceService) ListRequests(ctx context.Context, filters RequestFilte
 	return s.resourceRequestRepo.List(ctx, repoFilters, offset, pageSize)
 }
 
-// ApproveRequest approves a resource request.
+// ApproveRequest approves a resource request and triggers provisioning.
 func (s *resourceService) ApproveRequest(ctx context.Context, id, approverID, reason string) (*model.ResourceRequest, error) {
 	if id == "" {
 		return nil, errors.New("id cannot be empty")
@@ -330,6 +361,19 @@ func (s *resourceService) ApproveRequest(ctx context.Context, id, approverID, re
 		return nil, errors.New("failed to approve request")
 	}
 
+	// Send approval notification
+	if err := s.notificationService.NotifyResourceRequestApproved(ctx, request.RequesterID, request.ID, request.Title, reason); err != nil {
+		s.logger.Error("failed to send approval notification", zap.Error(err))
+	}
+
+	// Start provisioning asynchronously
+	go func() { //nolint:contextcheck // intentionally using background context for async operation
+		bgCtx := context.Background()
+		if err := s.provisionResource(bgCtx, request); err != nil {
+			s.logger.Error("failed to provision resource", zap.String("request_id", request.ID), zap.Error(err))
+		}
+	}()
+
 	return s.resourceRequestRepo.GetByID(ctx, id)
 }
 
@@ -360,7 +404,7 @@ func (s *resourceService) RejectRequest(ctx context.Context, id, approverID, rea
 	now := time.Now()
 	request.Status = "rejected"
 	request.ApproverID = &approverID
-	request.ApprovedAt = &now
+	request.RejectedAt = &now
 	request.Reason = reason
 
 	if err := s.resourceRequestRepo.Update(ctx, request); err != nil {
@@ -368,5 +412,284 @@ func (s *resourceService) RejectRequest(ctx context.Context, id, approverID, rea
 		return nil, errors.New("failed to reject request")
 	}
 
+	// Send rejection notification
+	if err := s.notificationService.NotifyResourceRequestRejected(ctx, request.RequesterID, request.ID, request.Title, reason); err != nil {
+		s.logger.Error("failed to send rejection notification", zap.Error(err))
+	}
+
 	return s.resourceRequestRepo.GetByID(ctx, id)
+}
+
+// RetryRequest retries a failed resource request.
+func (s *resourceService) RetryRequest(ctx context.Context, id, userID string) (*model.ResourceRequest, error) {
+	if id == "" {
+		return nil, errors.New("request ID cannot be empty")
+	}
+
+	request, err := s.resourceRequestRepo.GetByID(ctx, id)
+	if err != nil {
+		if errors.Is(err, repository.ErrNotFound) {
+			return nil, repository.ErrNotFound
+		}
+		return nil, err
+	}
+
+	// Only failed requests can be retried
+	if request.Status != "failed" {
+		return nil, ErrInvalidRequestStatus
+	}
+
+	// Reset the request status to approved and clear error
+	request.Status = "approved"
+	request.ErrorMessage = ""
+	request.ProvisionLog = ""
+	request.ProvisionStartedAt = nil
+	request.ProvisionCompletedAt = nil
+
+	if err := s.resourceRequestRepo.Update(ctx, request); err != nil {
+		s.logger.Error("failed to reset request for retry", zap.Error(err))
+		return nil, errors.New("failed to reset request for retry")
+	}
+
+	s.logger.Info("retrying resource provisioning",
+		zap.String("request_id", id),
+		zap.String("user_id", userID),
+	)
+
+	// Start provisioning in background
+	go func() { //nolint:contextcheck // intentionally using background context for async operation
+		bgCtx := context.Background()
+		if err := s.provisionResource(bgCtx, request); err != nil {
+			s.logger.Error("resource provisioning retry failed",
+				zap.String("request_id", id),
+				zap.Error(err),
+			)
+		}
+	}()
+
+	return s.resourceRequestRepo.GetByID(ctx, id)
+}
+
+// DeleteRequest deletes a resource request.
+func (s *resourceService) DeleteRequest(ctx context.Context, id, userID string) error {
+	if id == "" {
+		return errors.New("request ID cannot be empty")
+	}
+
+	request, err := s.resourceRequestRepo.GetByID(ctx, id)
+	if err != nil {
+		if errors.Is(err, repository.ErrNotFound) {
+			return repository.ErrNotFound
+		}
+		return err
+	}
+
+	// Only pending, rejected, or failed requests can be deleted
+	// Completed or provisioning requests cannot be deleted (resource already exists)
+	if request.Status == "provisioning" || request.Status == "completed" {
+		return errors.New("cannot delete request in current status")
+	}
+
+	s.logger.Info("deleting resource request",
+		zap.String("request_id", id),
+		zap.String("user_id", userID),
+		zap.String("status", request.Status),
+	)
+
+	return s.resourceRequestRepo.Delete(ctx, id)
+}
+
+// provisionResource handles the Terraform provisioning workflow.
+//
+//nolint:gocyclo,contextcheck,gocritic // complexity is inherent to provisioning workflow
+func (s *resourceService) provisionResource(ctx context.Context, request *model.ResourceRequest) error {
+	s.logger.Info("starting resource provisioning", zap.String("request_id", request.ID))
+
+	// Re-fetch the request with all relationships to ensure we have complete data
+	fullRequest, err := s.resourceRequestRepo.GetByID(ctx, request.ID)
+	if err != nil {
+		s.logger.Error("failed to fetch request for provisioning", zap.Error(err))
+		return s.handleProvisioningError(ctx, request, fmt.Errorf("failed to fetch request: %w", err))
+	}
+	request = fullRequest
+
+	// Update status to provisioning
+	now := time.Now()
+	request.Status = "provisioning"
+	request.ProvisionStartedAt = &now
+	if err := s.resourceRequestRepo.Update(ctx, request); err != nil {
+		s.logger.Error("failed to update request status to provisioning", zap.Error(err))
+		return err
+	}
+
+	// Parse spec to get resource configuration
+	var spec map[string]interface{}
+	if err := json.Unmarshal([]byte(request.Spec), &spec); err != nil {
+		return s.handleProvisioningError(ctx, request, fmt.Errorf("failed to parse spec: %w", err))
+	}
+
+	// Build Terraform config from Zone configuration
+	tfConfig := terraform.Config{
+		Provider:    request.Provider,
+		Environment: request.Environment,
+		Spec:        spec,
+	}
+
+	// Log configuration for debugging
+	s.logger.Info("provisioning configuration",
+		zap.String("request_id", request.ID),
+		zap.Bool("has_zone", request.Zone != nil),
+		zap.Bool("has_tf_provider", request.TfProvider != nil),
+		zap.Bool("has_tf_module", request.TfModule != nil),
+	)
+
+	// Get Provider configuration from ResourceRequest
+	if request.TfProvider != nil {
+		tfConfig.ProviderSource = request.TfProvider.Source
+		tfConfig.ProviderNamespace = request.TfProvider.Namespace
+		tfConfig.ProviderVersion = request.TfProvider.Version
+		s.logger.Info("using tf provider",
+			zap.String("source", request.TfProvider.Source),
+			zap.String("version", request.TfProvider.Version),
+		)
+
+		// Registry configuration comes from Provider
+		if request.TfProvider.Registry != nil {
+			tfConfig.RegistryEndpoint = request.TfProvider.Registry.Endpoint
+			tfConfig.RegistryToken = request.TfProvider.Registry.Token
+			s.logger.Info("using registry from provider", zap.String("endpoint", request.TfProvider.Registry.Endpoint))
+		}
+	}
+
+	// Get Module configuration from ResourceRequest
+	if request.TfModule != nil {
+		tfConfig.ModuleSource = request.TfModule.Source
+		tfConfig.ModuleVersion = request.TfModule.Version
+		s.logger.Info("using tf module",
+			zap.String("source", request.TfModule.Source),
+			zap.String("version", request.TfModule.Version),
+		)
+
+		// Registry configuration can also come from Module (if Provider not set)
+		if request.TfModule.Registry != nil && tfConfig.RegistryEndpoint == "" {
+			tfConfig.RegistryEndpoint = request.TfModule.Registry.Endpoint
+			tfConfig.RegistryToken = request.TfModule.Registry.Token
+			s.logger.Info("using registry from module", zap.String("endpoint", request.TfModule.Registry.Endpoint))
+		}
+	}
+
+	// Get Cluster endpoint and credentials from Credential (bound to Zone)
+	if request.Credential != nil {
+		credential := request.Credential
+		tfConfig.ClusterEndpoint = credential.Endpoint
+		tfConfig.ClusterUsername = credential.AccessKey
+		tfConfig.ClusterPassword = credential.SecretKey
+		tfConfig.ClusterToken = credential.Token
+		s.logger.Info("credential configuration found",
+			zap.String("credential_id", credential.ID),
+			zap.String("cluster_endpoint", credential.Endpoint),
+			zap.Bool("has_token", credential.Token != ""),
+		)
+	} else if request.Zone != nil {
+		s.logger.Warn("no credential found, zone available but has no direct endpoint",
+			zap.String("zone_id", request.Zone.ID),
+			zap.String("zone_name", request.Zone.Name),
+		)
+	} else {
+		s.logger.Warn("no credential or zone configuration found for request", zap.String("request_id", request.ID))
+	}
+
+	// Log the final TerraformConfig for debugging
+	s.logger.Info("terraform config prepared",
+		zap.String("registry_endpoint", tfConfig.RegistryEndpoint),
+		zap.String("provider_source", tfConfig.ProviderSource),
+		zap.String("module_source", tfConfig.ModuleSource),
+		zap.String("cluster_endpoint", tfConfig.ClusterEndpoint),
+	)
+
+	// Generate Terraform files
+	workDir := fmt.Sprintf("/tmp/terraform/%s", request.ID)
+	if err := s.terraformExecutor.GenerateTFFiles(workDir, tfConfig); err != nil {
+		return s.handleProvisioningError(ctx, request, fmt.Errorf("failed to generate terraform files: %w", err))
+	}
+
+	// Initialize Terraform
+	if err := s.terraformExecutor.Init(workDir); err != nil {
+		return s.handleProvisioningError(ctx, request, fmt.Errorf("terraform init failed: %w", err))
+	}
+
+	// Plan
+	planResult := s.terraformExecutor.Plan(workDir)
+	provisionLog := fmt.Sprintf("=== Terraform Plan ===\n%s\n", planResult.Output)
+	if !planResult.Success {
+		return s.handleProvisioningError(ctx, request, fmt.Errorf("terraform plan failed: %s", planResult.Error))
+	}
+
+	// Apply
+	applyResult := s.terraformExecutor.Apply(workDir)
+	provisionLog += fmt.Sprintf("\n=== Terraform Apply ===\n%s\n", applyResult.Output)
+	if !applyResult.Success {
+		return s.handleProvisioningError(ctx, request, fmt.Errorf("terraform apply failed: %s", applyResult.Error))
+	}
+
+	// Get outputs
+	outputs := s.terraformExecutor.GetOutputs(workDir)
+	outputsJSON, _ := json.Marshal(outputs) //nolint:errcheck // will not fail with map
+
+	// Create resource record
+	resourceName := fmt.Sprintf("%s-%s", request.Title, request.ID[:8])
+	resource := &model.Resource{
+		Name:        resourceName,
+		Type:        request.Type,
+		Provider:    request.Provider,
+		Environment: request.Environment,
+		Spec:        string(outputsJSON),
+		Description: request.Description,
+		OwnerID:     request.RequesterID,
+		Status:      "running",
+	}
+
+	if err := s.resourceRepo.Create(ctx, resource); err != nil {
+		s.logger.Error("failed to create resource record", zap.Error(err))
+		// Continue even if resource creation fails, as the infrastructure is already provisioned
+	}
+
+	// Update request with completion status
+	completedAt := time.Now()
+	request.Status = "completed"
+	request.ProvisionCompletedAt = &completedAt
+	request.ProvisionLog = provisionLog
+	request.TerraformState = "applied"
+	request.ResourceID = &resource.ID
+
+	if err := s.resourceRequestRepo.Update(ctx, request); err != nil {
+		s.logger.Error("failed to update request completion status", zap.Error(err))
+		return err
+	}
+
+	// Send success notification
+	if err := s.notificationService.NotifyResourceProvisioned(ctx, request.RequesterID, request.ID, resourceName, outputs); err != nil {
+		s.logger.Error("failed to send provisioning success notification", zap.Error(err))
+	}
+
+	s.logger.Info("resource provisioning completed", zap.String("request_id", request.ID), zap.String("resource_id", resource.ID))
+	return nil
+}
+
+// handleProvisioningError updates the request with error status and sends notification.
+func (s *resourceService) handleProvisioningError(ctx context.Context, request *model.ResourceRequest, err error) error {
+	s.logger.Error("provisioning failed", zap.String("request_id", request.ID), zap.Error(err))
+
+	request.Status = "failed"
+	request.ErrorMessage = err.Error()
+	if updateErr := s.resourceRequestRepo.Update(ctx, request); updateErr != nil {
+		s.logger.Error("failed to update request error status", zap.Error(updateErr))
+	}
+
+	// Send failure notification
+	if notifyErr := s.notificationService.NotifyResourceProvisioningFailed(ctx, request.RequesterID, request.ID, request.Title, err.Error()); notifyErr != nil {
+		s.logger.Error("failed to send provisioning failure notification", zap.Error(notifyErr))
+	}
+
+	return err
 }

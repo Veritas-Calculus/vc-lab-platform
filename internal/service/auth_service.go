@@ -3,13 +3,15 @@ package service
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
+	"sync"
 	"time"
 
 	"github.com/Veritas-Calculus/vc-lab-platform/internal/config"
 	"github.com/Veritas-Calculus/vc-lab-platform/internal/model"
 	"github.com/Veritas-Calculus/vc-lab-platform/internal/repository"
-	"github.com/go-redis/redis/v8"
 	"github.com/golang-jwt/jwt/v5"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -45,18 +47,63 @@ type Claims struct {
 	jwt.RegisteredClaims
 }
 
+// tokenBlacklist provides in-memory token blacklisting.
+type tokenBlacklist struct {
+	mu     sync.RWMutex
+	tokens map[string]time.Time
+}
+
+func newTokenBlacklist() *tokenBlacklist {
+	tb := &tokenBlacklist{
+		tokens: make(map[string]time.Time),
+	}
+	go tb.cleanup()
+	return tb
+}
+
+func (tb *tokenBlacklist) add(token string, expiry time.Time) {
+	tb.mu.Lock()
+	defer tb.mu.Unlock()
+	// Store hash of token to save memory
+	hash := sha256.Sum256([]byte(token))
+	tb.tokens[hex.EncodeToString(hash[:])] = expiry
+}
+
+func (tb *tokenBlacklist) contains(token string) bool {
+	tb.mu.RLock()
+	defer tb.mu.RUnlock()
+	hash := sha256.Sum256([]byte(token))
+	_, exists := tb.tokens[hex.EncodeToString(hash[:])]
+	return exists
+}
+
+func (tb *tokenBlacklist) cleanup() {
+	ticker := time.NewTicker(time.Hour)
+	defer ticker.Stop()
+	for range ticker.C {
+		tb.mu.Lock()
+		now := time.Now()
+		for hash, expiry := range tb.tokens {
+			if now.After(expiry) {
+				delete(tb.tokens, hash)
+			}
+		}
+		tb.mu.Unlock()
+	}
+}
+
 type authService struct {
-	userRepo repository.UserRepository
-	rdb      *redis.Client
-	cfg      *config.Config
+	userRepo  repository.UserRepository
+	cfg       *config.Config
+	blacklist *tokenBlacklist
 }
 
 // NewAuthService creates a new authentication service.
-func NewAuthService(userRepo repository.UserRepository, rdb *redis.Client, cfg *config.Config) AuthService {
+func NewAuthService(userRepo repository.UserRepository, cfg *config.Config) AuthService {
 	return &authService{
-		userRepo: userRepo,
-		rdb:      rdb,
-		cfg:      cfg,
+		userRepo:  userRepo,
+		cfg:       cfg,
+		blacklist: newTokenBlacklist(),
 	}
 }
 
@@ -115,7 +162,7 @@ func (s *authService) RefreshToken(ctx context.Context, refreshToken string) (*T
 	}
 
 	// Check if token is blacklisted
-	if s.isTokenBlacklisted(ctx, refreshToken) {
+	if s.blacklist.contains(refreshToken) {
 		return nil, ErrTokenBlacklisted
 	}
 
@@ -130,13 +177,13 @@ func (s *authService) RefreshToken(ctx context.Context, refreshToken string) (*T
 	}
 
 	// Blacklist old refresh token
-	s.blacklistToken(ctx, refreshToken, time.Duration(s.cfg.JWT.RefreshTokenTTL)*time.Hour)
+	s.blacklist.add(refreshToken, claims.ExpiresAt.Time)
 
 	// Generate new token pair
 	return s.generateTokenPair(user)
 }
 
-func (s *authService) Logout(ctx context.Context, accessToken string) error {
+func (s *authService) Logout(_ context.Context, accessToken string) error {
 	// Parse token to get expiration
 	claims := &Claims{}
 	token, err := jwt.ParseWithClaims(accessToken, claims, func(_ *jwt.Token) (interface{}, error) {
@@ -146,19 +193,15 @@ func (s *authService) Logout(ctx context.Context, accessToken string) error {
 	_ = err
 
 	if token != nil && token.Valid {
-		// Calculate remaining TTL
-		ttl := time.Until(claims.ExpiresAt.Time)
-		if ttl > 0 {
-			s.blacklistToken(ctx, accessToken, ttl)
-		}
+		s.blacklist.add(accessToken, claims.ExpiresAt.Time)
 	}
 
 	return nil
 }
 
-func (s *authService) ValidateToken(ctx context.Context, tokenString string) (*Claims, error) {
+func (s *authService) ValidateToken(_ context.Context, tokenString string) (*Claims, error) {
 	// Check if token is blacklisted
-	if s.isTokenBlacklisted(ctx, tokenString) {
+	if s.blacklist.contains(tokenString) {
 		return nil, ErrTokenBlacklisted
 	}
 
@@ -232,23 +275,6 @@ func (s *authService) generateTokenPair(user *model.User) (*TokenPair, error) {
 		ExpiresAt:    accessExpiry,
 		TokenType:    "Bearer",
 	}, nil
-}
-
-func (s *authService) blacklistToken(ctx context.Context, token string, ttl time.Duration) {
-	if s.rdb == nil {
-		return
-	}
-	key := "blacklist:" + token
-	s.rdb.Set(ctx, key, "1", ttl)
-}
-
-func (s *authService) isTokenBlacklisted(ctx context.Context, token string) bool {
-	if s.rdb == nil {
-		return false
-	}
-	key := "blacklist:" + token
-	result, err := s.rdb.Exists(ctx, key).Result()
-	return err == nil && result > 0
 }
 
 // HashPassword hashes a password using bcrypt.

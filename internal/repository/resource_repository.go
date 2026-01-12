@@ -114,6 +114,7 @@ type ResourceRequestRepository interface {
 	Create(ctx context.Context, request *model.ResourceRequest) error
 	GetByID(ctx context.Context, id string) (*model.ResourceRequest, error)
 	Update(ctx context.Context, request *model.ResourceRequest) error
+	Delete(ctx context.Context, id string) error
 	List(ctx context.Context, filters RequestFilters, offset, limit int) ([]*model.ResourceRequest, int64, error)
 }
 
@@ -143,7 +144,19 @@ func (r *resourceRequestRepository) Create(ctx context.Context, request *model.R
 
 func (r *resourceRequestRepository) GetByID(ctx context.Context, id string) (*model.ResourceRequest, error) {
 	var request model.ResourceRequest
-	result := r.db.WithContext(ctx).Preload("Requester").Preload("Approver").First(&request, "id = ?", id)
+	result := r.db.WithContext(ctx).
+		Preload("Requester").
+		Preload("Approver").
+		Preload("Region").
+		Preload("Zone").
+		Preload("Credential").
+		Preload("Credential.Zone").
+		Preload("TfProvider").
+		Preload("TfProvider.Registry").
+		Preload("TfModule").
+		Preload("TfModule.Registry").
+		Preload("TfModule.Provider").
+		First(&request, "id = ?", id)
 	if result.Error != nil {
 		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
 			return nil, ErrNotFound
@@ -156,6 +169,17 @@ func (r *resourceRequestRepository) GetByID(ctx context.Context, id string) (*mo
 func (r *resourceRequestRepository) Update(ctx context.Context, request *model.ResourceRequest) error {
 	result := r.db.WithContext(ctx).Save(request)
 	return result.Error
+}
+
+func (r *resourceRequestRepository) Delete(ctx context.Context, id string) error {
+	result := r.db.WithContext(ctx).Delete(&model.ResourceRequest{}, "id = ?", id)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return ErrNotFound
+	}
+	return nil
 }
 
 func (r *resourceRequestRepository) List(ctx context.Context, filters RequestFilters, offset, limit int) ([]*model.ResourceRequest, int64, error) {
@@ -180,8 +204,19 @@ func (r *resourceRequestRepository) List(ctx context.Context, filters RequestFil
 		return nil, 0, err
 	}
 
-	// Get paginated results
-	result := query.Preload("Requester").Preload("Approver").Offset(offset).Limit(limit).Order("created_at DESC").Find(&requests)
+	// Get paginated results with all related data
+	result := query.
+		Preload("Requester").
+		Preload("Approver").
+		Preload("Region").
+		Preload("Zone").
+		Preload("Credential").
+		Preload("Credential.Zone").
+		Preload("TfProvider").
+		Preload("TfProvider.Registry").
+		Preload("TfModule").
+		Preload("TfModule.Registry").
+		Offset(offset).Limit(limit).Order("created_at DESC").Find(&requests)
 	if result.Error != nil {
 		return nil, 0, result.Error
 	}

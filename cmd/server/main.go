@@ -55,20 +55,14 @@ func main() {
 		return
 	}
 
-	// Initialize Redis
-	rdb, err := database.NewRedis(cfg.Redis)
-	if err != nil {
-		log.Error("failed to connect to redis", zap.Error(err))
+	// Seed default data (roles and admin user)
+	if seedErr := database.Seed(db, cfg); seedErr != nil {
+		log.Error("failed to seed database", zap.Error(seedErr))
 		return
 	}
-	defer func() {
-		if closeErr := rdb.Close(); closeErr != nil {
-			log.Error("failed to close redis", zap.Error(closeErr))
-		}
-	}()
 
 	// Setup router
-	r := router.New(db, rdb, log, cfg)
+	r := router.New(db, log, cfg)
 
 	// Create HTTP server
 	srv := &http.Server{

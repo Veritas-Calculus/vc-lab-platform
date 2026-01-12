@@ -15,9 +15,16 @@ import (
 type Config struct {
 	Server   ServerConfig   `yaml:"server"`
 	Database DatabaseConfig `yaml:"database"`
-	Redis    RedisConfig    `yaml:"redis"`
 	JWT      JWTConfig      `yaml:"jwt"`
 	SSO      SSOConfig      `yaml:"sso"`
+	Admin    AdminConfig    `yaml:"admin"`
+}
+
+// AdminConfig represents the default admin account configuration.
+type AdminConfig struct {
+	Username string `yaml:"username"`
+	Password string `yaml:"password"`
+	Email    string `yaml:"email"`
 }
 
 // ServerConfig represents HTTP server configuration.
@@ -38,13 +45,6 @@ type DatabaseConfig struct {
 	MaxIdleConns    int    `yaml:"max_idle_conns"`
 	MaxOpenConns    int    `yaml:"max_open_conns"`
 	ConnMaxLifetime int    `yaml:"conn_max_lifetime"` // in minutes
-}
-
-// RedisConfig represents Redis configuration.
-type RedisConfig struct {
-	Addr     string `yaml:"addr"`
-	Password string `yaml:"password"`
-	DB       int    `yaml:"db"`
 }
 
 // JWTConfig represents JWT configuration.
@@ -101,11 +101,28 @@ func (c *Config) applyEnvOverrides() {
 	if dbPass := os.Getenv("VC_DB_PASSWORD"); dbPass != "" {
 		c.Database.Password = dbPass
 	}
-	if redisAddr := os.Getenv("VC_REDIS_ADDR"); redisAddr != "" {
-		c.Redis.Addr = redisAddr
-	}
 	if jwtSecret := os.Getenv("VC_JWT_SECRET"); jwtSecret != "" {
 		c.JWT.Secret = jwtSecret
+	}
+	if adminUser := os.Getenv("VC_ADMIN_USERNAME"); adminUser != "" {
+		c.Admin.Username = adminUser
+	}
+	if adminPass := os.Getenv("VC_ADMIN_PASSWORD"); adminPass != "" {
+		c.Admin.Password = adminPass
+	}
+	if adminEmail := os.Getenv("VC_ADMIN_EMAIL"); adminEmail != "" {
+		c.Admin.Email = adminEmail
+	}
+
+	// Apply defaults for admin
+	if c.Admin.Username == "" {
+		c.Admin.Username = "admin"
+	}
+	if c.Admin.Password == "" {
+		c.Admin.Password = "admin123"
+	}
+	if c.Admin.Email == "" {
+		c.Admin.Email = "admin@localhost"
 	}
 }
 

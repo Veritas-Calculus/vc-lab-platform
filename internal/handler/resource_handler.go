@@ -222,12 +222,18 @@ func (h *ResourceHandler) ListRequests(c *gin.Context) {
 
 // CreateRequestRequest represents a resource request creation.
 type CreateRequestRequest struct {
-	Title       string `json:"title" binding:"required,min=1,max=200"`
-	Description string `json:"description"`
-	Environment string `json:"environment" binding:"required,oneof=dev test staging prod"`
-	Provider    string `json:"provider" binding:"required,oneof=pve vmware openstack aws aliyun"`
-	Spec        string `json:"spec"`
-	Quantity    int    `json:"quantity"`
+	Title        string  `json:"title" binding:"required,min=1,max=200"`
+	Description  string  `json:"description"`
+	Type         string  `json:"type" binding:"required,oneof=vm container bare_metal"`
+	Environment  string  `json:"environment" binding:"required,oneof=dev test staging prod"`
+	Provider     string  `json:"provider" binding:"required,oneof=pve vmware openstack aws aliyun gcp azure"`
+	RegionID     *string `json:"region_id"`
+	ZoneID       *string `json:"zone_id"`
+	TfProviderID *string `json:"tf_provider_id"` // Selected Terraform provider
+	TfModuleID   *string `json:"tf_module_id"`   // Selected Terraform module
+	CredentialID *string `json:"credential_id"`  // Selected credential for access
+	Spec         string  `json:"spec"`
+	Quantity     int     `json:"quantity"`
 }
 
 // CreateRequest handles resource request creation.
@@ -250,13 +256,19 @@ func (h *ResourceHandler) CreateRequest(c *gin.Context) {
 	}
 
 	request, err := h.resourceService.CreateRequest(c.Request.Context(), &service.CreateRequestInput{
-		Title:       req.Title,
-		Description: req.Description,
-		Environment: req.Environment,
-		Provider:    req.Provider,
-		Spec:        req.Spec,
-		Quantity:    quantity,
-		RequesterID: userIDStr,
+		Title:        req.Title,
+		Description:  req.Description,
+		Type:         req.Type,
+		Environment:  req.Environment,
+		Provider:     req.Provider,
+		RegionID:     req.RegionID,
+		ZoneID:       req.ZoneID,
+		TfProviderID: req.TfProviderID,
+		TfModuleID:   req.TfModuleID,
+		CredentialID: req.CredentialID,
+		Spec:         req.Spec,
+		Quantity:     quantity,
+		RequesterID:  userIDStr,
 	})
 	if err != nil {
 		h.logger.Error("failed to create request", zap.Error(err))
@@ -373,4 +385,64 @@ func (h *ResourceHandler) RejectRequest(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, request)
+}
+
+// RetryRequest handles retrying a failed resource request.
+func (h *ResourceHandler) RetryRequest(c *gin.Context) {
+	id := c.Param("id")
+	if id == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Request ID required"})
+		return
+	}
+
+	userIDStr := getUserID(c)
+	if userIDStr == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User ID not found"})
+		return
+	}
+
+	request, err := h.resourceService.RetryRequest(c.Request.Context(), id, userIDStr)
+	if err != nil {
+		if errors.Is(err, repository.ErrNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Request not found"})
+			return
+		}
+		if errors.Is(err, service.ErrInvalidRequestStatus) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Only failed requests can be retried"})
+			return
+		}
+		h.logger.Error("failed to retry request", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retry request"})
+		return
+	}
+
+	c.JSON(http.StatusOK, request)
+}
+
+// DeleteRequest handles deleting a resource request.
+func (h *ResourceHandler) DeleteRequest(c *gin.Context) {
+	id := c.Param("id")
+	if id == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Request ID required"})
+		return
+	}
+
+	userIDStr := getUserID(c)
+	if userIDStr == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User ID not found"})
+		return
+	}
+
+	err := h.resourceService.DeleteRequest(c.Request.Context(), id, userIDStr)
+	if err != nil {
+		if errors.Is(err, repository.ErrNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Request not found"})
+			return
+		}
+		h.logger.Error("failed to delete request", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Request deleted successfully"})
 }

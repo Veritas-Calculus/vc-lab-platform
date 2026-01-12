@@ -22,6 +22,22 @@ const (
 	DBConnectionTimeout = 5 * time.Second
 )
 
+// Query parameter constants.
+const (
+	QueryTrue = "true" // Common query parameter value
+)
+
+// Provider type constants.
+const (
+	ProviderTypePVE       = "pve"
+	ProviderTypeVMware    = "vmware"
+	ProviderTypeOpenStack = "openstack"
+	ProviderTypeAWS       = "aws"
+	ProviderTypeAliyun    = "aliyun"
+	ProviderTypeGCP       = "gcp"
+	ProviderTypeAzure     = "azure"
+)
+
 // Security constants.
 const (
 	MinJWTSecretLength = 32

@@ -203,12 +203,17 @@ func (s *userService) Delete(ctx context.Context, id string) error {
 	}
 
 	// Verify user exists
-	_, err := s.userRepo.GetByID(ctx, id)
+	user, err := s.userRepo.GetByID(ctx, id)
 	if err != nil {
 		if errors.Is(err, repository.ErrNotFound) {
 			return repository.ErrNotFound
 		}
 		return err
+	}
+
+	// Prevent deleting system users
+	if user.IsSystem {
+		return errors.New("cannot delete system user")
 	}
 
 	if err := s.userRepo.Delete(ctx, id); err != nil {

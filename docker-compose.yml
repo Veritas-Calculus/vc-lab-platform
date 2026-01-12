@@ -1,0 +1,83 @@
+services:
+  # ================================
+  # Backend Service
+  # ================================
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: vc-lab-backend
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      - CONFIG_PATH=/app/config/config.yaml
+      - VC_DB_HOST=mysql
+      - VC_DB_PASSWORD=${MYSQL_ROOT_PASSWORD:-root_password}
+    volumes:
+      - ./config:/app/config:ro
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks:
+      - vc-lab-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+
+  # ================================
+  # Frontend Service
+  # ================================
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    container_name: vc-lab-frontend
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    networks:
+      - vc-lab-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:80/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+
+  # ================================
+  # MySQL Database
+  # ================================
+  mysql:
+    image: mysql:8.4
+    container_name: vc-lab-mysql
+    restart: unless-stopped
+    ports:
+      - "3306:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root_password}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-vc_lab}
+      MYSQL_USER: ${MYSQL_USER:-vc_lab}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-vc_lab_password}
+    volumes:
+      - mysql_data:/var/lib/mysql
+    networks:
+      - vc-lab-network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+networks:
+  vc-lab-network:
+    driver: bridge
+
+volumes:
+  mysql_data:

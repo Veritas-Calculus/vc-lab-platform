@@ -1,7 +1,35 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { userApi } from '@/api/users';
-import type { User, CreateUserRequest } from '@/types';
+import type { User, CreateUserRequest, UserSource } from '@/types';
+
+/**
+ * Get display label for user source.
+ */
+function getUserSourceLabel(source: UserSource): string {
+  const labels: Record<UserSource, string> = {
+    local: 'Local',
+    ldap: 'LDAP',
+    oidc: 'SSO (OIDC)',
+    saml: 'SSO (SAML)',
+    oauth2: 'OAuth2',
+  };
+  return labels[source] || source;
+}
+
+/**
+ * Get badge color for user source.
+ */
+function getUserSourceColor(source: UserSource): string {
+  const colors: Record<UserSource, string> = {
+    local: 'bg-blue-100 text-blue-800',
+    ldap: 'bg-purple-100 text-purple-800',
+    oidc: 'bg-indigo-100 text-indigo-800',
+    saml: 'bg-pink-100 text-pink-800',
+    oauth2: 'bg-orange-100 text-orange-800',
+  };
+  return colors[source] || 'bg-gray-100 text-gray-800';
+}
 
 /**
  * Users management page.
@@ -99,6 +127,9 @@ export default function UsersPage() {
                       Email
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Source
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Status
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -121,15 +152,29 @@ export default function UsersPage() {
                             {user.display_name?.[0] || user.username[0]}
                           </div>
                           <div className="ml-3">
-                            <p className="text-sm font-medium text-gray-900">
-                              {user.display_name || user.username}
-                            </p>
+                            <div className="flex items-center gap-2">
+                              <p className="text-sm font-medium text-gray-900">
+                                {user.display_name || user.username}
+                              </p>
+                              {user.is_system && (
+                                <span className="inline-flex px-1.5 py-0.5 text-xs font-medium bg-yellow-100 text-yellow-800 rounded">
+                                  System
+                                </span>
+                              )}
+                            </div>
                             <p className="text-sm text-gray-500">@{user.username}</p>
                           </div>
                         </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                         {user.email}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <span
+                          className={`inline-flex px-2 py-1 text-xs font-medium rounded ${getUserSourceColor(user.source || 'local')}`}
+                        >
+                          {getUserSourceLabel(user.source || 'local')}
+                        </span>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <span
@@ -169,13 +214,15 @@ export default function UsersPage() {
                         >
                           Edit
                         </button>
-                        <button
-                          onClick={() => handleDelete(user)}
-                          className="text-red-600 hover:text-red-900"
-                          disabled={deleteMutation.isPending}
-                        >
-                          Delete
-                        </button>
+                        {!user.is_system && (
+                          <button
+                            onClick={() => handleDelete(user)}
+                            className="text-red-600 hover:text-red-900"
+                            disabled={deleteMutation.isPending}
+                          >
+                            Delete
+                          </button>
+                        )}
                       </td>
                     </tr>
                   ))}

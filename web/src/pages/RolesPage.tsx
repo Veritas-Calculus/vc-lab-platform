@@ -91,7 +91,14 @@ export default function RolesPage() {
               <div key={role.id} className="card">
                 <div className="flex justify-between items-start mb-3">
                   <div>
-                    <h3 className="text-lg font-semibold text-gray-900">{role.name}</h3>
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-lg font-semibold text-gray-900">{role.name}</h3>
+                      {role.is_system && (
+                        <span className="inline-flex px-1.5 py-0.5 text-xs font-medium bg-yellow-100 text-yellow-800 rounded">
+                          System
+                        </span>
+                      )}
+                    </div>
                     <p className="text-sm text-gray-500">Code: {role.code}</p>
                   </div>
                   <span
@@ -141,13 +148,15 @@ export default function RolesPage() {
                   >
                     Edit
                   </button>
-                  <button
-                    onClick={() => handleDelete(role)}
-                    className="text-sm text-red-600 hover:text-red-900"
-                    disabled={deleteMutation.isPending}
-                  >
-                    Delete
-                  </button>
+                  {!role.is_system && (
+                    <button
+                      onClick={() => handleDelete(role)}
+                      className="text-sm text-red-600 hover:text-red-900"
+                      disabled={deleteMutation.isPending}
+                    >
+                      Delete
+                    </button>
+                  )}
                 </div>
               </div>
             ))}
