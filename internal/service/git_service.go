@@ -556,11 +556,11 @@ func (s *gitService) PullChanges(ctx context.Context, repoPath string) error {
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		s.logger.Error("git pull failed",
-			zap.String("path", repoPath),
-			zap.String("output", string(output)),
+			zap.String("path", sanitize.Path(repoPath)),
+			zap.String("output", sanitize.CommandOutput(string(output))),
 			zap.Error(err),
 		)
-		return fmt.Errorf("failed to pull changes: %s", string(output))
+		return fmt.Errorf("failed to pull changes: %s", sanitize.CommandOutput(string(output)))
 	}
 	return nil
 }
@@ -888,7 +888,7 @@ func (s *gitService) scanTerraformModules(basePath, repoURL string) ([]GitModule
 func (s *gitService) processModuleDirectory(path, basePath, repoURL string, info os.FileInfo) (*GitModule, bool) {
 	hasTfFiles, modErr := s.hasTerraformFiles(path)
 	if modErr != nil {
-		s.logger.Warn("error checking terraform files", zap.String("path", path), zap.Error(modErr))
+		s.logger.Warn("error checking terraform files", zap.String("path", sanitize.Path(path)), zap.Error(modErr))
 		return nil, false
 	}
 
@@ -898,7 +898,7 @@ func (s *gitService) processModuleDirectory(path, basePath, repoURL string, info
 
 	relPath, relErr := filepath.Rel(basePath, path)
 	if relErr != nil {
-		s.logger.Warn("error getting relative path", zap.String("path", path), zap.Error(relErr))
+		s.logger.Warn("error getting relative path", zap.String("path", sanitize.Path(path)), zap.Error(relErr))
 		return nil, false
 	}
 
@@ -1048,7 +1048,7 @@ func (s *gitService) syncModulesToDatabase(ctx context.Context, gitModules []Git
 			existingModule.Variables = string(variablesJSON)
 			if updateErr := s.tfModuleRepo.Update(ctx, existingModule); updateErr != nil {
 				s.logger.Warn("failed to update terraform module",
-					zap.String("name", gm.Name),
+					zap.String("name", sanitize.ForLog(gm.Name)),
 					zap.Error(updateErr),
 				)
 			}
@@ -1066,13 +1066,13 @@ func (s *gitService) syncModulesToDatabase(ctx context.Context, gitModules []Git
 		}
 		if createErr := s.tfModuleRepo.Create(ctx, newModule); createErr != nil {
 			s.logger.Warn("failed to create terraform module",
-				zap.String("name", gm.Name),
+				zap.String("name", sanitize.ForLog(gm.Name)),
 				zap.Error(createErr),
 			)
 		} else {
 			s.logger.Info("synced terraform module to database",
-				zap.String("name", gm.Name),
-				zap.String("source", gm.Source),
+				zap.String("name", sanitize.ForLog(gm.Name)),
+				zap.String("source", sanitize.URL(gm.Source)),
 			)
 		}
 	}

@@ -375,7 +375,7 @@ func (s *resourceService) ApproveRequest(ctx context.Context, id, approverID, re
 	go func() { //nolint:contextcheck // intentionally using background context for async operation
 		bgCtx := context.Background()
 		if err := s.provisionResource(bgCtx, request); err != nil {
-			s.logger.Error("failed to provision resource", zap.String("request_id", request.ID), zap.Error(err))
+			s.logger.Error("failed to provision resource", zap.String("request_id", sanitize.ForLog(request.ID)), zap.Error(err))
 		}
 	}()
 
@@ -466,7 +466,7 @@ func (s *resourceService) RetryRequest(ctx context.Context, id, userID string) (
 		bgCtx := context.Background()
 		if err := s.provisionResource(bgCtx, request); err != nil {
 			s.logger.Error("resource provisioning retry failed",
-				zap.String("request_id", id),
+				zap.String("request_id", sanitize.ForLog(id)),
 				zap.Error(err),
 			)
 		}
@@ -506,7 +506,7 @@ func (s *resourceService) DeleteRequest(ctx context.Context, id, userID string) 
 
 // provisionResource handles the Terraform provisioning workflow.
 func (s *resourceService) provisionResource(ctx context.Context, request *model.ResourceRequest) error {
-	s.logger.Info("starting resource provisioning", zap.String("request_id", request.ID))
+	s.logger.Info("starting resource provisioning", zap.String("request_id", sanitize.ForLog(request.ID)))
 
 	// Re-fetch the request with all relationships to ensure we have complete data
 	fullRequest, err := s.resourceRequestRepo.GetByID(ctx, request.ID)
@@ -556,7 +556,7 @@ func (s *resourceService) buildTerraformConfig(ctx context.Context, request *mod
 	}
 
 	s.logger.Info("provisioning configuration",
-		zap.String("request_id", request.ID),
+		zap.String("request_id", sanitize.ForLog(request.ID)),
 		zap.Bool("has_zone", request.Zone != nil),
 		zap.Bool("has_tf_provider", request.TfProvider != nil),
 		zap.Bool("has_tf_module", request.TfModule != nil),
@@ -677,7 +677,7 @@ func (s *resourceService) executeTerraformWorkflow(ctx context.Context, request 
 		s.logger.Error("failed to send provisioning success notification", zap.Error(err))
 	}
 
-	s.logger.Info("resource provisioning completed", zap.String("request_id", request.ID), zap.String("resource_id", resource.ID))
+	s.logger.Info("resource provisioning completed", zap.String("request_id", sanitize.ForLog(request.ID)), zap.String("resource_id", sanitize.ForLog(resource.ID)))
 	return nil
 }
 
@@ -746,7 +746,7 @@ func extractHostFromURL(rawURL string) string {
 
 // handleProvisioningError updates the request with error status and sends notification.
 func (s *resourceService) handleProvisioningError(ctx context.Context, request *model.ResourceRequest, err error) error {
-	s.logger.Error("provisioning failed", zap.String("request_id", request.ID), zap.Error(err))
+	s.logger.Error("provisioning failed", zap.String("request_id", sanitize.ForLog(request.ID)), zap.Error(err))
 
 	request.Status = "failed"
 	request.ErrorMessage = err.Error()
