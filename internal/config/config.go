@@ -70,7 +70,7 @@ func Load(path string) (*Config, error) {
 		return nil, errors.New("config path is required")
 	}
 
-	data, err := os.ReadFile(path) //nolint:gosec // path is validated
+	data, err := os.ReadFile(path) // #nosec G304 -- path is validated
 	if err != nil {
 		return nil, fmt.Errorf("failed to read config file: %w", err)
 	}

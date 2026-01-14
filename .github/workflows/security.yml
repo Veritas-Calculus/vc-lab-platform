@@ -31,6 +31,7 @@ jobs:
 
       - name: Run gosec
         uses: securego/gosec@master
+        continue-on-error: true  # Don't fail the job, let SARIF upload and CodeQL handle the results
         with:
           args: '-exclude-dir=vendor -fmt=sarif -out=gosec-results.sarif ./...'
 

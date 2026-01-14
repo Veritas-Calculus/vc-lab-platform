@@ -292,7 +292,7 @@ func (s *gitService) TestConnection(ctx context.Context, id string) error {
 	cloneURL := s.buildAuthenticatedURL(repo)
 	args := []string{"clone", "--depth", "1", "--branch", branch, cloneURL, tempDir}
 
-	cmd := exec.CommandContext(ctx, "git", args...) //nolint:gosec // G204 URL and branch validated above
+	cmd := exec.CommandContext(ctx, "git", args...) // #nosec G204 --  URL and branch validated above
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		s.logger.Error("git clone test failed",
@@ -356,7 +356,7 @@ func (s *gitService) TestConnectionDirect(ctx context.Context, input *TestConnec
 	cloneURL := s.buildAuthenticatedURL(repo)
 	args := []string{"clone", "--depth", "1", "--branch", branch, cloneURL, tempDir}
 
-	cmd := exec.CommandContext(ctx, "git", args...) //nolint:gosec // G204 URL and branch validated above
+	cmd := exec.CommandContext(ctx, "git", args...) // #nosec G204 --  URL and branch validated above
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		s.logger.Error("git clone test failed",
@@ -535,7 +535,7 @@ func (s *gitService) CloneRepository(ctx context.Context, repo *model.GitReposit
 	cloneURL := s.buildAuthenticatedURL(repo)
 	args := []string{"clone", "--branch", branch, "--single-branch", cloneURL, targetPath}
 
-	cmd := exec.CommandContext(ctx, "git", args...) //nolint:gosec // G204 URL and branch validated above
+	cmd := exec.CommandContext(ctx, "git", args...) // #nosec G204 --  URL and branch validated above
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		s.logger.Error("git clone failed",
@@ -573,7 +573,7 @@ func (s *gitService) CommitAndPush(ctx context.Context, repoPath string, files [
 		if err != nil {
 			relPath = file
 		}
-		cmd := exec.CommandContext(ctx, "git", "add", relPath) //nolint:gosec // G204 args are controlled internally
+		cmd := exec.CommandContext(ctx, "git", "add", relPath) // #nosec G204 --  args are controlled internally
 		cmd.Dir = repoPath
 		if output, err := cmd.CombinedOutput(); err != nil {
 			return "", fmt.Errorf("failed to add file %s: %s", relPath, string(output))
@@ -935,7 +935,7 @@ func (s *gitService) hasTerraformFiles(dirPath string) (bool, error) {
 func (s *gitService) extractModuleDescription(modulePath string) string {
 	// Try README.md first
 	readmePath := filepath.Join(modulePath, "README.md")
-	content, err := os.ReadFile(readmePath) //nolint:gosec // G304 path is constructed from controlled input
+	content, err := os.ReadFile(readmePath) // #nosec G304 --  path is constructed from controlled input
 	if err != nil {
 		return ""
 	}
@@ -975,7 +975,7 @@ func (s *gitService) extractVariableNames(modulePath string) []string {
 		}
 
 		filePath := filepath.Join(modulePath, entry.Name())
-		content, err := os.ReadFile(filePath) //nolint:gosec // G304 path is constructed from controlled input
+		content, err := os.ReadFile(filePath) // #nosec G304 --  path is constructed from controlled input
 		if err != nil {
 			continue
 		}
@@ -1012,7 +1012,7 @@ func (s *gitService) extractOutputNames(modulePath string) []string {
 		}
 
 		filePath := filepath.Join(modulePath, entry.Name())
-		content, err := os.ReadFile(filePath) //nolint:gosec // G304 path is constructed from controlled input
+		content, err := os.ReadFile(filePath) // #nosec G304 --  path is constructed from controlled input
 		if err != nil {
 			continue
 		}
