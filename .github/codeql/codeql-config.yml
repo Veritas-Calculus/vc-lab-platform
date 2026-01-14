@@ -1,0 +1,22 @@
+# CodeQL configuration for vc-lab-platform
+# This file configures custom query paths and filtering options
+
+name: "Custom CodeQL Configuration"
+
+# Use the default queries plus security-and-quality
+queries:
+  - uses: security-and-quality
+
+# Path filters - exclude test files and vendor directories
+paths-ignore:
+  - "**/vendor/**"
+  - "web/node_modules/**"
+
+# Custom model packs for sanitizer extensions
+packs:
+  go:
+    - codeql/go-queries
+
+# Reference our custom sanitizer extensions
+model-paths:
+  - .github/codeql/extensions

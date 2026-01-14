@@ -1,0 +1,20 @@
+extensions:
+  - addsTo:
+      pack: codeql/go-queries
+      extensible: logInjectionSanitizer
+    data:
+      # Our sanitize package functions break taint propagation for log injection
+      - ["github.com/Veritas-Calculus/vc-lab-platform/internal/sanitize", "ForLog", "Argument[0]", "ReturnValue", "log-injection-sanitizer"]
+      - ["github.com/Veritas-Calculus/vc-lab-platform/internal/sanitize", "URL", "Argument[0]", "ReturnValue", "log-injection-sanitizer"]
+      - ["github.com/Veritas-Calculus/vc-lab-platform/internal/sanitize", "Path", "Argument[0]", "ReturnValue", "log-injection-sanitizer"]
+      - ["github.com/Veritas-Calculus/vc-lab-platform/internal/sanitize", "Username", "Argument[0]", "ReturnValue", "log-injection-sanitizer"]
+      - ["github.com/Veritas-Calculus/vc-lab-platform/internal/sanitize", "Content", "Argument[0]", "ReturnValue", "log-injection-sanitizer"]
+      - ["github.com/Veritas-Calculus/vc-lab-platform/internal/sanitize", "CommandOutput", "Argument[0]", "ReturnValue", "log-injection-sanitizer"]
+
+  - addsTo:
+      pack: codeql/go-queries
+      extensible: commandInjectionSanitizer
+    data:
+      # ValidateGitURL and ValidateGitBranch sanitize inputs for command execution
+      - ["github.com/Veritas-Calculus/vc-lab-platform/internal/sanitize", "ValidateGitURL", "Argument[0]", "ReturnValue[0]", "command-injection-sanitizer"]
+      - ["github.com/Veritas-Calculus/vc-lab-platform/internal/sanitize", "ValidateGitBranch", "Argument[0]", "ReturnValue[0]", "command-injection-sanitizer"]
