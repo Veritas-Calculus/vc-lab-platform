@@ -2,6 +2,8 @@
 package sanitize
 
 import (
+	"errors"
+	"net/url"
 	"regexp"
 	"strings"
 )
@@ -82,4 +84,80 @@ func CommandOutput(output string) string {
 		s = s[:maxOutputLength] + "...[truncated]"
 	}
 	return s
+}
+
+// ErrInvalidGitURL is returned when a git URL is invalid or contains suspicious patterns.
+var ErrInvalidGitURL = errors.New("invalid git URL")
+
+// allowedGitSchemes contains the allowed URL schemes for git operations.
+var allowedGitSchemes = map[string]bool{
+	"https": true,
+	"http":  true,
+	"git":   true,
+	"ssh":   true,
+}
+
+// gitURLDangerousPatterns contains patterns that should not appear in git URLs.
+var gitURLDangerousPatterns = regexp.MustCompile(`[;&|$` + "`" + `\(\)<>]`)
+
+// ValidateGitURL validates a git URL for safe use in command execution.
+// Returns the validated URL and an error if the URL is invalid.
+func ValidateGitURL(rawURL string) (string, error) {
+	if rawURL == "" {
+		return "", ErrInvalidGitURL
+	}
+
+	// Check for shell metacharacters
+	if gitURLDangerousPatterns.MatchString(rawURL) {
+		return "", ErrInvalidGitURL
+	}
+
+	// Check for command injection via newlines
+	if strings.ContainsAny(rawURL, "\r\n") {
+		return "", ErrInvalidGitURL
+	}
+
+	// Parse and validate the URL
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return "", ErrInvalidGitURL
+	}
+
+	// Check scheme
+	if !allowedGitSchemes[strings.ToLower(parsed.Scheme)] {
+		return "", ErrInvalidGitURL
+	}
+
+	// Check for suspicious host patterns
+	if parsed.Host == "" {
+		return "", ErrInvalidGitURL
+	}
+
+	// Reconstruct a safe URL
+	return rawURL, nil
+}
+
+// ValidateGitBranch validates a git branch name for safe use in command execution.
+func ValidateGitBranch(branch string) (string, error) {
+	if branch == "" {
+		return "main", nil
+	}
+
+	// Git branch names cannot contain these characters
+	invalidChars := regexp.MustCompile(`[\s~^:?*\[\]\\]`)
+	if invalidChars.MatchString(branch) {
+		return "", errors.New("invalid branch name")
+	}
+
+	// Cannot start or end with /
+	if strings.HasPrefix(branch, "/") || strings.HasSuffix(branch, "/") {
+		return "", errors.New("invalid branch name")
+	}
+
+	// Cannot contain ..
+	if strings.Contains(branch, "..") {
+		return "", errors.New("invalid branch name")
+	}
+
+	return branch, nil
 }

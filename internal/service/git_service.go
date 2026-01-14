@@ -272,6 +272,15 @@ func (s *gitService) TestConnection(ctx context.Context, id string) error {
 		return err
 	}
 
+	// Validate URL and branch from stored repository
+	if _, urlErr := sanitize.ValidateGitURL(repo.URL); urlErr != nil {
+		return fmt.Errorf("invalid repository URL: %w", urlErr)
+	}
+	branch, branchErr := sanitize.ValidateGitBranch(repo.Branch)
+	if branchErr != nil {
+		return fmt.Errorf("invalid branch name: %w", branchErr)
+	}
+
 	// Create a temporary directory for testing
 	tempDir, err := os.MkdirTemp("", "git-test-*")
 	if err != nil {
@@ -280,21 +289,18 @@ func (s *gitService) TestConnection(ctx context.Context, id string) error {
 	defer os.RemoveAll(tempDir) //nolint:errcheck // best effort cleanup
 
 	// Try to clone with depth 1 to test connection
-	args := []string{"clone", "--depth", "1", "--branch", repo.Branch} //nolint:prealloc // not worth preallocating for 2 items
-
-	// Build the authenticated URL if credentials are provided
 	cloneURL := s.buildAuthenticatedURL(repo)
-	args = append(args, cloneURL, tempDir)
+	args := []string{"clone", "--depth", "1", "--branch", branch, cloneURL, tempDir}
 
-	cmd := exec.CommandContext(ctx, "git", args...) //nolint:gosec // G204 args are controlled internally
+	cmd := exec.CommandContext(ctx, "git", args...) //nolint:gosec // G204 URL and branch validated above
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		s.logger.Error("git clone test failed",
-			zap.String("repo", repo.Name),
-			zap.String("output", string(output)),
+			zap.String("repo", sanitize.ForLog(repo.Name)),
+			zap.String("output", sanitize.CommandOutput(string(output))),
 			zap.Error(err),
 		)
-		return fmt.Errorf("failed to connect to repository: %s", string(output))
+		return fmt.Errorf("failed to connect to repository: %s", sanitize.CommandOutput(string(output)))
 	}
 
 	// Update last sync time
@@ -316,14 +322,21 @@ func (s *gitService) TestConnectionDirect(ctx context.Context, input *TestConnec
 		return errors.New("url is required")
 	}
 
-	branch := input.Branch
-	if branch == "" {
-		branch = "main"
+	// Validate the URL to prevent command injection
+	validatedURL, err := sanitize.ValidateGitURL(input.URL)
+	if err != nil {
+		return fmt.Errorf("invalid repository URL: %w", err)
+	}
+
+	// Validate and sanitize the branch name
+	branch, err := sanitize.ValidateGitBranch(input.Branch)
+	if err != nil {
+		return fmt.Errorf("invalid branch name: %w", err)
 	}
 
 	// Create a temporary repository object for testing
 	repo := &model.GitRepository{
-		URL:      input.URL,
+		URL:      validatedURL,
 		Branch:   branch,
 		AuthType: input.AuthType,
 		Username: input.Username,
@@ -339,13 +352,11 @@ func (s *gitService) TestConnectionDirect(ctx context.Context, input *TestConnec
 	defer os.RemoveAll(tempDir) //nolint:errcheck // best effort cleanup
 
 	// Try to clone with depth 1 to test connection
-	args := []string{"clone", "--depth", "1", "--branch", branch} //nolint:prealloc // not worth preallocating for 2 items
-
-	// Build the authenticated URL if credentials are provided
+	// Note: cloneURL is built from validated URL with credentials added
 	cloneURL := s.buildAuthenticatedURL(repo)
-	args = append(args, cloneURL, tempDir)
+	args := []string{"clone", "--depth", "1", "--branch", branch, cloneURL, tempDir}
 
-	cmd := exec.CommandContext(ctx, "git", args...) //nolint:gosec // G204 args are controlled internally
+	cmd := exec.CommandContext(ctx, "git", args...) //nolint:gosec // G204 URL and branch validated above
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		s.logger.Error("git clone test failed",
@@ -506,24 +517,33 @@ func (s *gitService) ListNodeConfigs(ctx context.Context, repoID string, page, p
 
 // CloneRepository clones a git repository to the target path.
 func (s *gitService) CloneRepository(ctx context.Context, repo *model.GitRepository, targetPath string) error {
+	// Validate URL and branch
+	if _, urlErr := sanitize.ValidateGitURL(repo.URL); urlErr != nil {
+		return fmt.Errorf("invalid repository URL: %w", urlErr)
+	}
+	branch, branchErr := sanitize.ValidateGitBranch(repo.Branch)
+	if branchErr != nil {
+		return fmt.Errorf("invalid branch name: %w", branchErr)
+	}
+
 	// Remove existing directory if exists
-	if err := os.RemoveAll(targetPath); err != nil {
-		return fmt.Errorf("failed to remove existing directory: %w", err)
+	if rmErr := os.RemoveAll(targetPath); rmErr != nil {
+		return fmt.Errorf("failed to remove existing directory: %w", rmErr)
 	}
 
 	// Build the clone command
 	cloneURL := s.buildAuthenticatedURL(repo)
-	args := []string{"clone", "--branch", repo.Branch, "--single-branch", cloneURL, targetPath}
+	args := []string{"clone", "--branch", branch, "--single-branch", cloneURL, targetPath}
 
-	cmd := exec.CommandContext(ctx, "git", args...) //nolint:gosec // G204 args are controlled internally
+	cmd := exec.CommandContext(ctx, "git", args...) //nolint:gosec // G204 URL and branch validated above
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		s.logger.Error("git clone failed",
-			zap.String("repo", repo.Name),
-			zap.String("output", string(output)),
+			zap.String("repo", sanitize.ForLog(repo.Name)),
+			zap.String("output", sanitize.CommandOutput(string(output))),
 			zap.Error(err),
 		)
-		return fmt.Errorf("failed to clone repository: %s", string(output))
+		return fmt.Errorf("failed to clone repository: %s", sanitize.CommandOutput(string(output)))
 	}
 
 	return nil
