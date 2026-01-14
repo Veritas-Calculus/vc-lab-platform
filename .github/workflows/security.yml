@@ -9,6 +9,11 @@ on:
     # Run weekly on Monday at 00:00 UTC
     - cron: '0 0 * * 1'
 
+# Global permissions for all jobs
+permissions:
+  contents: read
+  security-events: write
+
 env:
   GO_VERSION: '1.25'
 
