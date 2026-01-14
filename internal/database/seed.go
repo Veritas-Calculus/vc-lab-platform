@@ -109,6 +109,6 @@ func seedAdminUser(db *gorm.DB, cfg *config.Config) error {
 		return err
 	}
 
-	log.Printf("Created admin user: %s (password: %s)", cfg.Admin.Username, cfg.Admin.Password)
+	log.Printf("Created admin user: %s", cfg.Admin.Username)
 	return nil
 }

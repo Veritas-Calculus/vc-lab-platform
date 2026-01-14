@@ -9,6 +9,7 @@ import (
 	"github.com/Veritas-Calculus/vc-lab-platform/internal/constants"
 	"github.com/Veritas-Calculus/vc-lab-platform/internal/model"
 	"github.com/Veritas-Calculus/vc-lab-platform/internal/repository"
+	"github.com/Veritas-Calculus/vc-lab-platform/internal/sanitize"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
@@ -108,10 +109,10 @@ func (m *AuditMiddleware) Audit() gin.HandlerFunc {
 		// Log the request
 		m.logger.Info("request",
 			zap.String("method", c.Request.Method),
-			zap.String("path", c.Request.URL.Path),
+			zap.String("path", sanitize.Path(c.Request.URL.Path)),
 			zap.Int("status", c.Writer.Status()),
 			zap.Duration("duration", time.Since(start)),
-			zap.String("client_ip", c.ClientIP()),
+			zap.String("client_ip", sanitize.ForLog(c.ClientIP())),
 			zap.String("user_id", userIDStr),
 		)
 	}

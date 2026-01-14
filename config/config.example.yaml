@@ -16,7 +16,7 @@ database:
 
 redis:
   addr: "localhost:6379"
-  password: ""
+  password: "your_redis_password_if_any"  # Leave as placeholder or set actual password
   db: 0
 
 jwt:

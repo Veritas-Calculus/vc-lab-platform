@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/Veritas-Calculus/vc-lab-platform/internal/constants"
+	"github.com/Veritas-Calculus/vc-lab-platform/internal/sanitize"
 	"github.com/Veritas-Calculus/vc-lab-platform/internal/service"
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
@@ -130,7 +131,7 @@ func Recovery(logger *zap.Logger) gin.HandlerFunc {
 			if err := recover(); err != nil {
 				logger.Error("panic recovered",
 					zap.Any("error", err),
-					zap.String("path", c.Request.URL.Path),
+					zap.String("path", sanitize.Path(c.Request.URL.Path)),
 				)
 				c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "Internal server error"})
 			}

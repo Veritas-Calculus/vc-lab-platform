@@ -13,6 +13,7 @@ import (
 	"github.com/Veritas-Calculus/vc-lab-platform/internal/model"
 	"github.com/Veritas-Calculus/vc-lab-platform/internal/notification"
 	"github.com/Veritas-Calculus/vc-lab-platform/internal/repository"
+	"github.com/Veritas-Calculus/vc-lab-platform/internal/sanitize"
 	"github.com/Veritas-Calculus/vc-lab-platform/internal/terraform"
 	"go.uber.org/zap"
 )
@@ -456,8 +457,8 @@ func (s *resourceService) RetryRequest(ctx context.Context, id, userID string) (
 	}
 
 	s.logger.Info("retrying resource provisioning",
-		zap.String("request_id", id),
-		zap.String("user_id", userID),
+		zap.String("request_id", sanitize.ForLog(id)),
+		zap.String("user_id", sanitize.ForLog(userID)),
 	)
 
 	// Start provisioning in background
@@ -495,9 +496,9 @@ func (s *resourceService) DeleteRequest(ctx context.Context, id, userID string) 
 	}
 
 	s.logger.Info("deleting resource request",
-		zap.String("request_id", id),
-		zap.String("user_id", userID),
-		zap.String("status", request.Status),
+		zap.String("request_id", sanitize.ForLog(id)),
+		zap.String("user_id", sanitize.ForLog(userID)),
+		zap.String("status", sanitize.ForLog(request.Status)),
 	)
 
 	return s.resourceRequestRepo.Delete(ctx, id)

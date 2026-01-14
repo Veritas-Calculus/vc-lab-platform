@@ -4,6 +4,7 @@ package handler
 import (
 	"net/http"
 
+	"github.com/Veritas-Calculus/vc-lab-platform/internal/sanitize"
 	"github.com/Veritas-Calculus/vc-lab-platform/internal/service"
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
@@ -41,7 +42,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 
 	tokens, err := h.authService.Login(c.Request.Context(), req.Username, req.Password, clientIP)
 	if err != nil {
-		h.logger.Warn("login failed", zap.String("username", req.Username), zap.Error(err))
+		h.logger.Warn("login failed", zap.String("username", sanitize.Username(req.Username)), zap.Error(err))
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid credentials"})
 		return
 	}

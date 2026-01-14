@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/Veritas-Calculus/vc-lab-platform/internal/sanitize"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
@@ -73,8 +74,8 @@ func (s *service) Send(ctx context.Context, notification *Notification) error {
 	s.logger.Info("sending notification",
 		zap.String("type", string(notification.Type)),
 		zap.String("user_id", notification.UserID),
-		zap.String("title", notification.Title),
-		zap.String("content", notification.Content),
+		zap.String("title", sanitize.Content(notification.Title)),
+		zap.String("content", sanitize.Content(notification.Content)),
 	)
 
 	// TODO: Implement actual notification delivery based on type

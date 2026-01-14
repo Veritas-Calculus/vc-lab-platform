@@ -16,6 +16,7 @@ import (
 
 	"github.com/Veritas-Calculus/vc-lab-platform/internal/model"
 	"github.com/Veritas-Calculus/vc-lab-platform/internal/repository"
+	"github.com/Veritas-Calculus/vc-lab-platform/internal/sanitize"
 	"go.uber.org/zap"
 )
 
@@ -348,11 +349,11 @@ func (s *gitService) TestConnectionDirect(ctx context.Context, input *TestConnec
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		s.logger.Error("git clone test failed",
-			zap.String("url", input.URL),
-			zap.String("output", string(output)),
+			zap.String("url", sanitize.URL(input.URL)),
+			zap.String("output", sanitize.CommandOutput(string(output))),
 			zap.Error(err),
 		)
-		return fmt.Errorf("failed to connect to repository: %s", string(output))
+		return fmt.Errorf("failed to connect to repository: %s", sanitize.CommandOutput(string(output)))
 	}
 
 	return nil
