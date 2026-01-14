@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -34,6 +35,11 @@ type Config struct {
 	Provider    string                 `json:"provider"`    // pve, vmware, openstack
 	Environment string                 `json:"environment"` // dev, test, staging, prod
 	Spec        map[string]interface{} `json:"spec"`        // Resource specifications
+
+	// Git authentication for module downloads
+	GitHost     string `json:"git_host"`     // Git server host (e.g., git.example.com)
+	GitUsername string `json:"git_username"` // Git username
+	GitToken    string `json:"git_token"`    // Git access token
 
 	// Zone configuration
 	RegistryEndpoint string `json:"registry_endpoint"` // Registry mirror URL
@@ -61,6 +67,14 @@ const (
 	filePerm = 0o644 // File permissions (rw-r--r--)
 )
 
+// ansiRegex matches ANSI escape sequences.
+var ansiRegex = regexp.MustCompile(`\x1b\[[0-9;]*[a-zA-Z]`)
+
+// stripANSI removes ANSI escape codes from a string.
+func stripANSI(s string) string {
+	return ansiRegex.ReplaceAllString(s, "")
+}
+
 // NewExecutor creates a new Terraform executor.
 func NewExecutor(logger *zap.Logger) *Executor {
 	return &Executor{
@@ -68,140 +82,182 @@ func NewExecutor(logger *zap.Logger) *Executor {
 	}
 }
 
-// Init initializes a Terraform working directory.
-func (e *Executor) Init(workDir string) error {
-	ctx := context.Background()
-	cmd := exec.CommandContext(ctx, "terraform", "init", "-no-color")
-	cmd.Dir = workDir
+// InitWithConfig initializes a Terraform working directory with Git credentials.
+func (e *Executor) InitWithConfig(workDir string, config Config) error {
+	// Configure Git credentials if provided
+	if config.GitHost != "" && config.GitToken != "" {
+		if err := e.configureGitCredentials(workDir, config); err != nil {
+			e.logger.Warn("failed to configure git credentials", zap.Error(err))
+		}
+	}
+
+	return e.Init(workDir)
+}
+
+// netrcFilePermission is the permission for .netrc files.
+const netrcFilePermission = 0o600
+
+// configureGitCredentials sets up Git credentials for module downloads.
+func (e *Executor) configureGitCredentials(workDir string, config Config) error {
+	// Create .netrc file for HTTPS authentication
+	netrcContent := fmt.Sprintf("machine %s\nlogin %s\npassword %s\n",
+		config.GitHost,
+		config.GitUsername,
+		config.GitToken,
+	)
+	netrcPath := filepath.Join(workDir, ".netrc")
+	if err := os.WriteFile(netrcPath, []byte(netrcContent), netrcFilePermission); err != nil {
+		return fmt.Errorf("failed to write .netrc: %w", err)
+	}
+
+	// Set HOME to workDir so git uses our .netrc
+	if err := os.Setenv("HOME", workDir); err != nil {
+		return fmt.Errorf("failed to set HOME: %w", err)
+	}
+	e.logger.Info("configured git credentials", zap.String("host", config.GitHost))
+	return nil
+}
+
+// isTerragrunt checks if the working directory uses Terragrunt.
+func (e *Executor) isTerragrunt(workDir string) bool {
+	hclPath := filepath.Join(workDir, "terragrunt.hcl")
+	_, err := os.Stat(hclPath)
+	return err == nil
+}
+
+// buildEnv builds environment variables for Terraform/Terragrunt execution.
+func (e *Executor) buildEnv(workDir string) []string {
+	env := os.Environ()
 
 	// Check if .terraformrc exists and set TF_CLI_CONFIG_FILE
 	rcPath := filepath.Join(workDir, ".terraformrc")
 	if _, err := os.Stat(rcPath); err == nil {
-		cmd.Env = append(os.Environ(), fmt.Sprintf("TF_CLI_CONFIG_FILE=%s", rcPath))
+		env = append(env, fmt.Sprintf("TF_CLI_CONFIG_FILE=%s", rcPath))
 		e.logger.Info("using custom terraform config", zap.String("config", rcPath))
 	}
+
+	// Check if .netrc exists and set HOME to workDir
+	netrcPath := filepath.Join(workDir, ".netrc")
+	if _, err := os.Stat(netrcPath); err == nil {
+		env = append(env, fmt.Sprintf("HOME=%s", workDir))
+		e.logger.Info("using .netrc for git authentication", zap.String("path", netrcPath))
+	}
+
+	return env
+}
+
+// Init initializes a Terraform/Terragrunt working directory.
+func (e *Executor) Init(workDir string) error {
+	ctx := context.Background()
+
+	var cmd *exec.Cmd
+	if e.isTerragrunt(workDir) {
+		cmd = exec.CommandContext(ctx, "terragrunt", "init", "--terragrunt-non-interactive")
+		e.logger.Info("using terragrunt init")
+	} else {
+		cmd = exec.CommandContext(ctx, "terraform", "init", "-no-color")
+		e.logger.Info("using terraform init")
+	}
+	cmd.Dir = workDir
+	cmd.Env = e.buildEnv(workDir)
 
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
 	if err := cmd.Run(); err != nil {
-		e.logger.Error("terraform init failed",
+		e.logger.Error("init failed",
 			zap.String("stderr", stderr.String()),
 			zap.String("stdout", stdout.String()),
 			zap.Error(err),
 		)
-		return fmt.Errorf("terraform init failed: %s", stderr.String())
+		return fmt.Errorf("init failed: %s", stripANSI(stderr.String()))
 	}
 
-	e.logger.Info("terraform init completed", zap.String("output", stdout.String()))
+	e.logger.Info("init completed", zap.String("output", stripANSI(stdout.String())))
 	return nil
 }
 
-// Plan runs terraform plan.
+// runCommand executes a terraform/terragrunt command and returns the result.
+func (e *Executor) runCommand(workDir, operation string, tfArgs, tgArgs []string) *ExecutionResult {
+	start := time.Now()
+	result := &ExecutionResult{}
+	ctx := context.Background()
+
+	var cmd *exec.Cmd
+	if e.isTerragrunt(workDir) {
+		cmd = exec.CommandContext(ctx, "terragrunt", tgArgs...)
+	} else {
+		cmd = exec.CommandContext(ctx, "terraform", tfArgs...)
+	}
+	cmd.Dir = workDir
+	cmd.Env = e.buildEnv(workDir)
+
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	err := cmd.Run()
+	result.Duration = time.Since(start)
+	result.Output = stripANSI(stdout.String())
+
+	if err != nil {
+		e.logger.Error(operation+" failed",
+			zap.Error(err),
+			zap.String("stderr", stripANSI(stderr.String())),
+		)
+		result.Error = stripANSI(stderr.String())
+		return result
+	}
+
+	result.Success = true
+	return result
+}
+
+// Plan runs terraform/terragrunt plan.
 func (e *Executor) Plan(workDir string) *ExecutionResult {
-	start := time.Now()
-	result := &ExecutionResult{}
-
-	ctx := context.Background()
-	cmd := exec.CommandContext(ctx, "terraform", "plan", "-no-color", "-out=tfplan")
-	cmd.Dir = workDir
-
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	err := cmd.Run()
-	result.Duration = time.Since(start)
-	result.Output = stdout.String()
-
-	if err != nil {
-		e.logger.Error("terraform plan failed",
-			zap.Error(err),
-			zap.String("stderr", stderr.String()),
-		)
-		result.Error = stderr.String()
-		return result
-	}
-
-	result.Success = true
-	return result
+	return e.runCommand(workDir, "plan",
+		[]string{"plan", "-no-color", "-out=tfplan"},
+		[]string{"plan", "--terragrunt-non-interactive", "-out=tfplan"},
+	)
 }
 
-// Apply applies the Terraform plan.
+// Apply applies the Terraform/Terragrunt plan.
 func (e *Executor) Apply(workDir string) *ExecutionResult {
-	start := time.Now()
-	result := &ExecutionResult{}
-
-	ctx := context.Background()
-	cmd := exec.CommandContext(ctx, "terraform", "apply", "-no-color", "-auto-approve", "tfplan")
-	cmd.Dir = workDir
-
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	err := cmd.Run()
-	result.Duration = time.Since(start)
-	result.Output = stdout.String()
-
-	if err != nil {
-		e.logger.Error("terraform apply failed",
-			zap.Error(err),
-			zap.String("stderr", stderr.String()),
-		)
-		result.Error = stderr.String()
-		return result
+	result := e.runCommand(workDir, "apply",
+		[]string{"apply", "-no-color", "-auto-approve", "tfplan"},
+		[]string{"apply", "--terragrunt-non-interactive", "-auto-approve", "tfplan"},
+	)
+	if result.Success {
+		result.Outputs = e.GetOutputs(workDir)
 	}
-
-	result.Success = true
-
-	// Get outputs
-	outputs := e.GetOutputs(workDir)
-	result.Outputs = outputs
-
 	return result
 }
 
-// Destroy destroys the Terraform-managed infrastructure.
+// Destroy destroys the Terraform/Terragrunt-managed infrastructure.
 func (e *Executor) Destroy(workDir string) *ExecutionResult {
-	start := time.Now()
-	result := &ExecutionResult{}
-
-	ctx := context.Background()
-	cmd := exec.CommandContext(ctx, "terraform", "destroy", "-no-color", "-auto-approve")
-	cmd.Dir = workDir
-
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	err := cmd.Run()
-	result.Duration = time.Since(start)
-	result.Output = stdout.String()
-
-	if err != nil {
-		e.logger.Error("terraform destroy failed",
-			zap.Error(err),
-			zap.String("stderr", stderr.String()),
-		)
-		result.Error = stderr.String()
-		return result
-	}
-
-	result.Success = true
-	return result
+	return e.runCommand(workDir, "destroy",
+		[]string{"destroy", "-no-color", "-auto-approve"},
+		[]string{"destroy", "--terragrunt-non-interactive", "-auto-approve"},
+	)
 }
 
-// GetOutputs retrieves Terraform outputs.
+// GetOutputs retrieves Terraform/Terragrunt outputs.
 func (e *Executor) GetOutputs(workDir string) map[string]string {
 	ctx := context.Background()
-	cmd := exec.CommandContext(ctx, "terraform", "output", "-json")
+
+	var cmd *exec.Cmd
+	if e.isTerragrunt(workDir) {
+		cmd = exec.CommandContext(ctx, "terragrunt", "output", "-json")
+	} else {
+		cmd = exec.CommandContext(ctx, "terraform", "output", "-json")
+	}
 	cmd.Dir = workDir
+	cmd.Env = e.buildEnv(workDir)
 
 	output, err := cmd.Output()
 	if err != nil {
-		e.logger.Error("failed to get terraform outputs", zap.Error(err))
+		e.logger.Error("failed to get outputs", zap.Error(err))
 		return nil
 	}
 
@@ -241,16 +297,18 @@ func (e *Executor) GenerateTFFiles(workDir string, config Config) error {
 		)
 	}
 
-	// Generate main.tf based on whether we have a module or raw provider
+	// Determine whether to use Terragrunt or pure Terraform
+	if config.ModuleSource != "" {
+		// Use Terragrunt for module-based deployments
+		return e.generateTerragruntFiles(workDir, config)
+	}
+
+	// Pure Terraform for raw provider configurations
 	var mainTF string
 	var err error
-	if config.ModuleSource != "" {
-		mainTF = generateModuleBasedTF(config)
-	} else {
-		mainTF, err = generateMainTF(config)
-		if err != nil {
-			return err
-		}
+	mainTF, err = generateMainTF(config)
+	if err != nil {
+		return err
 	}
 	if err := os.WriteFile(filepath.Join(workDir, "main.tf"), []byte(mainTF), filePerm); err != nil {
 		return err
@@ -265,20 +323,201 @@ func (e *Executor) GenerateTFFiles(workDir string, config Config) error {
 	e.logger.Info("generated terraform files",
 		zap.String("work_dir", workDir),
 		zap.String("provider", config.Provider),
-		zap.Bool("use_module", config.ModuleSource != ""),
 	)
 
 	return nil
 }
 
+// generateTerragruntFiles generates Terragrunt configuration files.
+func (e *Executor) generateTerragruntFiles(workDir string, config Config) error {
+	// Format module source as git::https://... if needed
+	moduleSource := formatModuleSource(config.ModuleSource, config.ModuleVersion)
+
+	// Generate terragrunt.hcl
+	terragruntHCL := generateTerragruntHCL(config, moduleSource)
+	hclPath := filepath.Join(workDir, "terragrunt.hcl")
+	if err := os.WriteFile(hclPath, []byte(terragruntHCL), filePerm); err != nil {
+		return fmt.Errorf("failed to write terragrunt.hcl: %w", err)
+	}
+
+	e.logger.Info("generated terragrunt files",
+		zap.String("work_dir", workDir),
+		zap.String("module_source", moduleSource),
+	)
+
+	return nil
+}
+
+// formatModuleSource converts a module URL to git::https:// format if needed.
+func formatModuleSource(source, version string) string {
+	// If already in git:: format, add version if needed and return
+	if strings.HasPrefix(source, "git::") {
+		return addVersionRef(source, version)
+	}
+
+	// Convert https:// to git::https://
+	if strings.HasPrefix(source, "https://") {
+		gitSource := convertHTTPSToGit(source)
+		return addVersionRef(gitSource, version)
+	}
+
+	// Return as-is for other formats (registry modules, etc.)
+	return source
+}
+
+// convertHTTPSToGit converts an https:// URL to git::https:// format.
+// Example: https://git.example.com/repo//subpath -> git::https://git.example.com/repo.git//subpath
+func convertHTTPSToGit(source string) string {
+	// Already has .git suffix, just add git:: prefix
+	if strings.Contains(source, ".git") {
+		return "git::" + source
+	}
+
+	// Find the subpath separator (//) - but skip the https:// part
+	// We need to find // after the host part
+	withoutScheme := strings.TrimPrefix(source, "https://")
+
+	// Find the first // in the path (subpath separator)
+	if idx := strings.Index(withoutScheme, "//"); idx > 0 {
+		// Split into repo part and subpath
+		repoPart := withoutScheme[:idx]
+		subPath := withoutScheme[idx:]
+		// Add .git before the subpath
+		return "git::https://" + repoPart + ".git" + subPath
+	}
+
+	// No subpath, just append .git
+	return "git::" + source + ".git"
+}
+
+// addVersionRef adds ?ref=version to a source URL if not already present.
+func addVersionRef(source, version string) string {
+	if version != "" && !strings.Contains(source, "?ref=") {
+		return source + "?ref=" + version
+	}
+	return source
+}
+
+// providerPVE is the constant for Proxmox VE provider type.
+const providerPVE = "pve"
+
+// generateTerragruntHCL generates a terragrunt.hcl file.
+func generateTerragruntHCL(config Config, moduleSource string) string {
+	inputs := buildTerragruntInputs(config)
+
+	return fmt.Sprintf(`# Generated by VC Lab Platform
+# Provider: %s
+# Environment: %s
+
+terraform {
+  source = "%s"
+}
+
+inputs = {
+%s
+}
+`, config.Provider, config.Environment, moduleSource, strings.Join(inputs, "\n"))
+}
+
+// buildTerragruntInputs builds the inputs block for terragrunt.hcl.
+func buildTerragruntInputs(config Config) []string {
+	var inputs []string
+
+	// Add provider credentials based on provider type
+	switch config.Provider {
+	case providerPVE:
+		inputs = append(inputs, buildPVEInputs(config)...)
+	default:
+		inputs = append(inputs, buildGenericInputs(config)...)
+	}
+
+	// Add spec values
+	for key, value := range config.Spec {
+		inputs = append(inputs, formatInputValue(key, value))
+	}
+
+	return inputs
+}
+
+// buildPVEInputs builds Proxmox VE specific inputs.
+func buildPVEInputs(config Config) []string {
+	var inputs []string
+	if config.ClusterEndpoint != "" {
+		inputs = append(inputs, fmt.Sprintf("  proxmox_host = %q", extractHost(config.ClusterEndpoint)))
+	}
+	if config.ClusterUsername != "" {
+		inputs = append(inputs, fmt.Sprintf("  pm_user = %q", config.ClusterUsername))
+	}
+	if config.ClusterToken != "" {
+		inputs = append(inputs, fmt.Sprintf("  pm_api_token = %q", config.ClusterToken))
+	} else if config.ClusterPassword != "" {
+		inputs = append(inputs, fmt.Sprintf("  pm_password = %q", config.ClusterPassword))
+	}
+	return inputs
+}
+
+// buildGenericInputs builds generic provider inputs.
+func buildGenericInputs(config Config) []string {
+	var inputs []string
+	if config.ClusterEndpoint != "" {
+		inputs = append(inputs, fmt.Sprintf("  api_endpoint = %q", config.ClusterEndpoint))
+	}
+	if config.ClusterUsername != "" {
+		inputs = append(inputs, fmt.Sprintf("  api_username = %q", config.ClusterUsername))
+	}
+	if config.ClusterToken != "" {
+		inputs = append(inputs, fmt.Sprintf("  api_token = %q", config.ClusterToken))
+	}
+	return inputs
+}
+
+// extractHost extracts hostname from URL.
+func extractHost(endpoint string) string {
+	endpoint = strings.TrimPrefix(endpoint, "https://")
+	endpoint = strings.TrimPrefix(endpoint, "http://")
+	if idx := strings.Index(endpoint, "/"); idx > 0 {
+		return endpoint[:idx]
+	}
+	if idx := strings.Index(endpoint, ":"); idx > 0 {
+		return endpoint[:idx]
+	}
+	return endpoint
+}
+
+// formatInputValue formats a value for HCL.
+func formatInputValue(key string, value interface{}) string {
+	switch v := value.(type) {
+	case string:
+		return fmt.Sprintf("  %s = %q", key, v)
+	case float64:
+		if v == float64(int64(v)) {
+			return fmt.Sprintf("  %s = %d", key, int64(v))
+		}
+		return fmt.Sprintf("  %s = %f", key, v)
+	case bool:
+		return fmt.Sprintf("  %s = %t", key, v)
+	case int, int64:
+		return fmt.Sprintf("  %s = %d", key, v)
+	default:
+		jsonVal, _ := json.Marshal(v) //nolint:errcheck // will not fail
+		return fmt.Sprintf("  %s = %s", key, string(jsonVal))
+	}
+}
+
 // generateTerraformRC generates a .terraformrc file for registry mirror.
 func generateTerraformRC(config Config) string {
+	// Normalize registry endpoint - remove https:// prefix if present
+	endpoint := config.RegistryEndpoint
+	endpoint = strings.TrimPrefix(endpoint, "https://")
+	endpoint = strings.TrimPrefix(endpoint, "http://")
+	endpoint = strings.TrimSuffix(endpoint, "/")
+
 	var creds string
 	if config.RegistryToken != "" {
 		creds = fmt.Sprintf(`
 credentials "%s" {
   token = "%s"
-}`, config.RegistryEndpoint, config.RegistryToken)
+}`, endpoint, config.RegistryToken)
 	}
 
 	return fmt.Sprintf(`provider_installation {
@@ -290,7 +529,7 @@ credentials "%s" {
     exclude = ["*/*"]
   }
 }
-%s`, config.RegistryEndpoint, creds)
+%s`, endpoint, creds)
 }
 
 // generateTFVars generates terraform.tfvars with credentials and resource specs.
@@ -301,7 +540,7 @@ func generateTFVars(config Config) string {
 
 	// Add provider-specific credential variables
 	switch config.Provider {
-	case "pve":
+	case providerPVE:
 		// Proxmox-specific variable names
 		if config.ClusterEndpoint != "" {
 			lines = append(lines, fmt.Sprintf(`proxmox_api_url = "%s"`, config.ClusterEndpoint))
@@ -375,7 +614,7 @@ func generateTFVars(config Config) string {
 
 		// Provider-specific spec values
 		switch config.Provider {
-		case "pve":
+		case providerPVE:
 			if targetNode, ok := config.Spec["target_node"]; ok {
 				lines = append(lines, fmt.Sprintf(`target_node = "%v"`, targetNode))
 			} else {
@@ -430,142 +669,10 @@ func generateTFVars(config Config) string {
 	return strings.Join(lines, "\n") + "\n"
 }
 
-// generateModuleBasedTF generates Terraform config using a module.
-func generateModuleBasedTF(config Config) string {
-	providerSource := config.ProviderSource
-	if providerSource == "" {
-		// Default providers for common types
-		switch config.Provider {
-		case "pve":
-			providerSource = "bpg/proxmox"
-		case "vmware":
-			providerSource = "hashicorp/vsphere"
-		case "openstack":
-			providerSource = "terraform-provider-openstack/openstack"
-		default:
-			providerSource = "hashicorp/" + config.Provider
-		}
-	}
-
-	providerVersion := config.ProviderVersion
-	if providerVersion == "" {
-		providerVersion = ">= 0.1.0"
-	}
-
-	moduleVersion := ""
-	if config.ModuleVersion != "" {
-		moduleVersion = fmt.Sprintf(`  version = "%s"`, config.ModuleVersion) //nolint:gocritic // %q would add extra escaping
-	}
-
-	return fmt.Sprintf(`terraform {
-  required_providers {
-    %s = {
-      source  = "%s"
-      version = "%s"
-    }
-  }
-}
-
-variable "api_endpoint" {
-  description = "API endpoint URL"
-  type        = string
-}
-
-variable "api_username" {
-  description = "API username"
-  type        = string
-  default     = ""
-}
-
-variable "api_password" {
-  description = "API password"
-  type        = string
-  sensitive   = true
-  default     = ""
-}
-
-variable "api_token" {
-  description = "API token"
-  type        = string
-  sensitive   = true
-  default     = ""
-}
-
-variable "cpu" {
-  description = "Number of CPUs"
-  type        = number
-  default     = 2
-}
-
-variable "memory" {
-  description = "Memory in MB"
-  type        = number
-  default     = 4096
-}
-
-variable "disk" {
-  description = "Disk size in GB"
-  type        = number
-  default     = 50
-}
-
-variable "vm_name" {
-  description = "Name of the virtual machine"
-  type        = string
-}
-
-variable "network" {
-  description = "Network configuration"
-  type        = string
-  default     = ""
-}
-
-variable "os_image" {
-  description = "OS image/template to use"
-  type        = string
-  default     = ""
-}
-
-variable "environment" {
-  description = "Environment name"
-  type        = string
-  default     = "dev"
-}
-
-module "resource" {
-  source = "%s"
-%s
-
-  api_endpoint = var.api_endpoint
-  api_username = var.api_username
-  api_password = var.api_password
-  api_token    = var.api_token
-  
-  cpu     = var.cpu
-  memory  = var.memory
-  disk    = var.disk
-  vm_name = var.vm_name
-  network = var.network
-  os_image = var.os_image
-  environment = var.environment
-}
-
-output "resource_id" {
-  description = "ID of the created resource"
-  value       = try(module.resource.resource_id, "")
-}
-
-output "resource_ip" {
-  description = "IP address of the resource"
-  value       = try(module.resource.ip_address, "")
-}
-`, config.Provider, providerSource, providerVersion, config.ModuleSource, moduleVersion)
-}
-
 // generateMainTF generates the main Terraform configuration.
 func generateMainTF(config Config) (string, error) {
 	switch config.Provider {
-	case "pve":
+	case providerPVE:
 		return generateProxmoxTF(config), nil
 	case "vmware":
 		return generateVMwareTF(config), nil

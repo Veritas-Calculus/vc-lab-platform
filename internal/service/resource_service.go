@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"time"
 
 	"github.com/Veritas-Calculus/vc-lab-platform/internal/constants"
@@ -42,6 +43,7 @@ type ResourceService interface {
 type resourceService struct {
 	resourceRepo        repository.ResourceRepository
 	resourceRequestRepo repository.ResourceRequestRepository
+	gitRepoRepo         repository.GitRepoRepository
 	terraformExecutor   *terraform.Executor
 	notificationService notification.Service
 	logger              *zap.Logger
@@ -51,6 +53,7 @@ type resourceService struct {
 func NewResourceService(
 	resourceRepo repository.ResourceRepository,
 	resourceRequestRepo repository.ResourceRequestRepository,
+	gitRepoRepo repository.GitRepoRepository,
 	terraformExecutor *terraform.Executor,
 	notificationService notification.Service,
 	logger *zap.Logger,
@@ -58,6 +61,7 @@ func NewResourceService(
 	return &resourceService{
 		resourceRepo:        resourceRepo,
 		resourceRequestRepo: resourceRequestRepo,
+		gitRepoRepo:         gitRepoRepo,
 		terraformExecutor:   terraformExecutor,
 		notificationService: notificationService,
 		logger:              logger,
@@ -500,8 +504,6 @@ func (s *resourceService) DeleteRequest(ctx context.Context, id, userID string) 
 }
 
 // provisionResource handles the Terraform provisioning workflow.
-//
-//nolint:gocyclo,contextcheck,gocritic // complexity is inherent to provisioning workflow
 func (s *resourceService) provisionResource(ctx context.Context, request *model.ResourceRequest) error {
 	s.logger.Info("starting resource provisioning", zap.String("request_id", request.ID))
 
@@ -528,14 +530,30 @@ func (s *resourceService) provisionResource(ctx context.Context, request *model.
 		return s.handleProvisioningError(ctx, request, fmt.Errorf("failed to parse spec: %w", err))
 	}
 
-	// Build Terraform config from Zone configuration
+	// Build Terraform config from request configuration
+	tfConfig := s.buildTerraformConfig(ctx, request, spec)
+
+	// Log the final TerraformConfig for debugging
+	s.logger.Info("terraform config prepared",
+		zap.String("registry_endpoint", tfConfig.RegistryEndpoint),
+		zap.String("provider_source", tfConfig.ProviderSource),
+		zap.String("module_source", tfConfig.ModuleSource),
+		zap.String("cluster_endpoint", tfConfig.ClusterEndpoint),
+		zap.String("git_host", tfConfig.GitHost),
+	)
+
+	// Execute Terraform workflow
+	return s.executeTerraformWorkflow(ctx, request, tfConfig)
+}
+
+// buildTerraformConfig creates a Terraform configuration from the request.
+func (s *resourceService) buildTerraformConfig(ctx context.Context, request *model.ResourceRequest, spec map[string]interface{}) terraform.Config {
 	tfConfig := terraform.Config{
 		Provider:    request.Provider,
 		Environment: request.Environment,
 		Spec:        spec,
 	}
 
-	// Log configuration for debugging
 	s.logger.Info("provisioning configuration",
 		zap.String("request_id", request.ID),
 		zap.Bool("has_zone", request.Zone != nil),
@@ -543,7 +561,7 @@ func (s *resourceService) provisionResource(ctx context.Context, request *model.
 		zap.Bool("has_tf_module", request.TfModule != nil),
 	)
 
-	// Get Provider configuration from ResourceRequest
+	// Get Provider configuration
 	if request.TfProvider != nil {
 		tfConfig.ProviderSource = request.TfProvider.Source
 		tfConfig.ProviderNamespace = request.TfProvider.Namespace
@@ -552,16 +570,13 @@ func (s *resourceService) provisionResource(ctx context.Context, request *model.
 			zap.String("source", request.TfProvider.Source),
 			zap.String("version", request.TfProvider.Version),
 		)
-
-		// Registry configuration comes from Provider
 		if request.TfProvider.Registry != nil {
 			tfConfig.RegistryEndpoint = request.TfProvider.Registry.Endpoint
 			tfConfig.RegistryToken = request.TfProvider.Registry.Token
-			s.logger.Info("using registry from provider", zap.String("endpoint", request.TfProvider.Registry.Endpoint))
 		}
 	}
 
-	// Get Module configuration from ResourceRequest
+	// Get Module configuration
 	if request.TfModule != nil {
 		tfConfig.ModuleSource = request.TfModule.Source
 		tfConfig.ModuleVersion = request.TfModule.Version
@@ -569,52 +584,43 @@ func (s *resourceService) provisionResource(ctx context.Context, request *model.
 			zap.String("source", request.TfModule.Source),
 			zap.String("version", request.TfModule.Version),
 		)
-
-		// Registry configuration can also come from Module (if Provider not set)
 		if request.TfModule.Registry != nil && tfConfig.RegistryEndpoint == "" {
 			tfConfig.RegistryEndpoint = request.TfModule.Registry.Endpoint
 			tfConfig.RegistryToken = request.TfModule.Registry.Token
-			s.logger.Info("using registry from module", zap.String("endpoint", request.TfModule.Registry.Endpoint))
 		}
 	}
 
-	// Get Cluster endpoint and credentials from Credential (bound to Zone)
+	// Get Credential configuration
 	if request.Credential != nil {
-		credential := request.Credential
-		tfConfig.ClusterEndpoint = credential.Endpoint
-		tfConfig.ClusterUsername = credential.AccessKey
-		tfConfig.ClusterPassword = credential.SecretKey
-		tfConfig.ClusterToken = credential.Token
-		s.logger.Info("credential configuration found",
-			zap.String("credential_id", credential.ID),
-			zap.String("cluster_endpoint", credential.Endpoint),
-			zap.Bool("has_token", credential.Token != ""),
-		)
-	} else if request.Zone != nil {
-		s.logger.Warn("no credential found, zone available but has no direct endpoint",
-			zap.String("zone_id", request.Zone.ID),
-			zap.String("zone_name", request.Zone.Name),
-		)
-	} else {
-		s.logger.Warn("no credential or zone configuration found for request", zap.String("request_id", request.ID))
+		tfConfig.ClusterEndpoint = request.Credential.Endpoint
+		tfConfig.ClusterUsername = request.Credential.AccessKey
+		tfConfig.ClusterPassword = request.Credential.SecretKey
+		tfConfig.ClusterToken = request.Credential.Token
 	}
 
-	// Log the final TerraformConfig for debugging
-	s.logger.Info("terraform config prepared",
-		zap.String("registry_endpoint", tfConfig.RegistryEndpoint),
-		zap.String("provider_source", tfConfig.ProviderSource),
-		zap.String("module_source", tfConfig.ModuleSource),
-		zap.String("cluster_endpoint", tfConfig.ClusterEndpoint),
-	)
+	// Configure Git authentication for module download
+	if tfConfig.ModuleSource != "" {
+		if err := s.configureGitAuth(ctx, &tfConfig); err != nil {
+			s.logger.Warn("failed to configure git auth", zap.Error(err))
+		}
+	}
+
+	return tfConfig
+}
+
+// executeTerraformWorkflow runs the Terraform init, plan, apply workflow.
+//
+//nolint:contextcheck // terraform executor methods don't use context
+func (s *resourceService) executeTerraformWorkflow(ctx context.Context, request *model.ResourceRequest, tfConfig terraform.Config) error {
+	workDir := fmt.Sprintf("/tmp/terraform/%s", request.ID)
 
 	// Generate Terraform files
-	workDir := fmt.Sprintf("/tmp/terraform/%s", request.ID)
 	if err := s.terraformExecutor.GenerateTFFiles(workDir, tfConfig); err != nil {
 		return s.handleProvisioningError(ctx, request, fmt.Errorf("failed to generate terraform files: %w", err))
 	}
 
-	// Initialize Terraform
-	if err := s.terraformExecutor.Init(workDir); err != nil {
+	// Initialize Terraform with Git credentials
+	if err := s.terraformExecutor.InitWithConfig(workDir, tfConfig); err != nil {
 		return s.handleProvisioningError(ctx, request, fmt.Errorf("terraform init failed: %w", err))
 	}
 
@@ -632,11 +638,10 @@ func (s *resourceService) provisionResource(ctx context.Context, request *model.
 		return s.handleProvisioningError(ctx, request, fmt.Errorf("terraform apply failed: %s", applyResult.Error))
 	}
 
-	// Get outputs
+	// Get outputs and create resource record
 	outputs := s.terraformExecutor.GetOutputs(workDir)
 	outputsJSON, _ := json.Marshal(outputs) //nolint:errcheck // will not fail with map
 
-	// Create resource record
 	resourceName := fmt.Sprintf("%s-%s", request.Title, request.ID[:8])
 	resource := &model.Resource{
 		Name:        resourceName,
@@ -651,7 +656,6 @@ func (s *resourceService) provisionResource(ctx context.Context, request *model.
 
 	if err := s.resourceRepo.Create(ctx, resource); err != nil {
 		s.logger.Error("failed to create resource record", zap.Error(err))
-		// Continue even if resource creation fails, as the infrastructure is already provisioned
 	}
 
 	// Update request with completion status
@@ -674,6 +678,69 @@ func (s *resourceService) provisionResource(ctx context.Context, request *model.
 
 	s.logger.Info("resource provisioning completed", zap.String("request_id", request.ID), zap.String("resource_id", resource.ID))
 	return nil
+}
+
+// configureGitAuth extracts Git host from module source and finds matching repository credentials.
+// maxGitReposToSearch is the maximum number of git repos to search for credentials.
+const maxGitReposToSearch = 100
+
+func (s *resourceService) configureGitAuth(ctx context.Context, tfConfig *terraform.Config) error {
+	if s.gitRepoRepo == nil {
+		return nil // No git repo configured
+	}
+
+	moduleSource := tfConfig.ModuleSource
+	if moduleSource == "" {
+		return nil
+	}
+
+	// Extract host from module source URL using net/url
+	host := extractHostFromURL(moduleSource)
+	if host == "" {
+		s.logger.Debug("could not extract host from module source", zap.String("source", moduleSource))
+		return nil
+	}
+
+	s.logger.Info("looking for git credentials", zap.String("host", host))
+
+	repos, _, err := s.gitRepoRepo.List(ctx, 1, maxGitReposToSearch)
+	if err != nil {
+		return fmt.Errorf("failed to list git repos: %w", err)
+	}
+
+	for _, repo := range repos {
+		if repo.URL == "" {
+			continue
+		}
+		repoHost := extractHostFromURL(repo.URL)
+		if repoHost != host {
+			continue
+		}
+		tfConfig.GitHost = host
+		tfConfig.GitUsername = repo.Username
+		if tfConfig.GitUsername == "" {
+			tfConfig.GitUsername = "git" // Default username for token auth
+		}
+		tfConfig.GitToken = repo.Token
+		s.logger.Info("found git credentials for module download",
+			zap.String("host", host),
+			zap.String("repo_name", repo.Name),
+			zap.Bool("has_token", repo.Token != ""),
+		)
+		return nil
+	}
+
+	s.logger.Warn("no git credentials found for module host", zap.String("host", host))
+	return nil
+}
+
+// extractHostFromURL extracts the host from a URL string.
+func extractHostFromURL(rawURL string) string {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return ""
+	}
+	return parsed.Host
 }
 
 // handleProvisioningError updates the request with error status and sends notification.

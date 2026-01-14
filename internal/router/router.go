@@ -50,7 +50,7 @@ func New(db *gorm.DB, logger *zap.Logger, cfg *config.Config) *gin.Engine {
 	// Initialize services
 	authService := service.NewAuthService(userRepo, cfg)
 	userService := service.NewUserService(userRepo, roleRepo, logger)
-	resourceService := service.NewResourceService(resourceRepo, resourceRequestRepo, terraformExecutor, notificationService, logger)
+	resourceService := service.NewResourceService(resourceRepo, resourceRequestRepo, gitRepoRepo, terraformExecutor, notificationService, logger)
 	roleService := service.NewRoleService(roleRepo, logger)
 	settingsService := service.NewSettingsService(providerRepo, credentialRepo, logger)
 	infraService := service.NewInfraService(regionRepo, zoneRepo, tfRegistryRepo, tfProviderRepo, tfModuleRepo, logger)

@@ -27,12 +27,31 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
 # ================================
 FROM alpine:3.21
 
-# Install runtime dependencies (git is required for git repository operations)
-RUN apk add --no-cache ca-certificates tzdata git
+# Install runtime dependencies
+# - git: required for git repository operations
+# - terraform: required for infrastructure provisioning
+# - terragrunt: required for terraform orchestration
+# - openssh-client: for SSH key operations
+ARG TERRAFORM_VERSION=1.10.0
+ARG TERRAGRUNT_VERSION=0.68.1
+RUN apk add --no-cache ca-certificates tzdata git openssh-client curl unzip && \
+    # Install Terraform
+    curl -fsSL "https://releases.hashicorp.com/terraform/${TERRAFORM_VERSION}/terraform_${TERRAFORM_VERSION}_linux_amd64.zip" -o terraform.zip && \
+    unzip terraform.zip && \
+    mv terraform /usr/local/bin/ && \
+    rm terraform.zip && \
+    terraform version && \
+    # Install Terragrunt
+    curl -fsSL "https://github.com/gruntwork-io/terragrunt/releases/download/v${TERRAGRUNT_VERSION}/terragrunt_linux_amd64" -o /usr/local/bin/terragrunt && \
+    chmod +x /usr/local/bin/terragrunt && \
+    terragrunt --version
 
 # Create non-root user for security
 RUN addgroup -g 1000 -S app && \
     adduser -u 1000 -S app -G app
+
+# Create terraform working directory
+RUN mkdir -p /tmp/terraform && chown -R app:app /tmp/terraform
 
 # Set working directory
 WORKDIR /app
