@@ -582,7 +582,7 @@ func (s *gitService) CommitAndPush(ctx context.Context, repoPath string, files [
 
 	// Commit
 	// codeql[go/command-injection] safe: arguments are controlled internally and trusted
-	cmd := exec.CommandContext(ctx, "git", "commit", "-m", message)
+	cmd := exec.CommandContext(ctx, "git", "commit", "-m", message) // #nosec G204 --  commit message trusted
 	cmd.Dir = repoPath
 	if output, err := cmd.CombinedOutput(); err != nil {
 		return "", fmt.Errorf("failed to commit: %s", string(output))
