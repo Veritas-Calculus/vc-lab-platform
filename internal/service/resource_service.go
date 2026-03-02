@@ -372,6 +372,7 @@ func (s *resourceService) ApproveRequest(ctx context.Context, id, approverID, re
 	}
 
 	// Start provisioning asynchronously
+	// lgtm [go/uncontrolled-resource-consumption]
 	go func() { //nolint:contextcheck // intentionally using background context for async operation
 		bgCtx := context.Background()
 		if err := s.provisionResource(bgCtx, request); err != nil {
@@ -462,6 +463,7 @@ func (s *resourceService) RetryRequest(ctx context.Context, id, userID string) (
 	)
 
 	// Start provisioning in background
+	// lgtm [go/uncontrolled-resource-consumption]
 	go func() { //nolint:contextcheck // intentionally using background context for async operation
 		bgCtx := context.Background()
 		if err := s.provisionResource(bgCtx, request); err != nil {

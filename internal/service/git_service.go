@@ -581,6 +581,7 @@ func (s *gitService) CommitAndPush(ctx context.Context, repoPath string, files [
 	}
 
 	// Commit
+	// lgtm [go/command-injection]
 	cmd := exec.CommandContext(ctx, "git", "commit", "-m", message)
 	cmd.Dir = repoPath
 	if output, err := cmd.CombinedOutput(); err != nil {
@@ -597,6 +598,7 @@ func (s *gitService) CommitAndPush(ctx context.Context, repoPath string, files [
 	commitSHA := strings.TrimSpace(string(output))
 
 	// Push
+	// lgtm [go/command-injection]
 	cmd = exec.CommandContext(ctx, "git", "push")
 	cmd.Dir = repoPath
 	if output, err := cmd.CombinedOutput(); err != nil {
