@@ -159,7 +159,7 @@ jobs:
             ./cmd/server
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: vc-lab-server-${{ matrix.goos }}-${{ matrix.goarch }}
           path: dist/
