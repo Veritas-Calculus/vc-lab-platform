@@ -186,10 +186,10 @@ func (e *Executor) runCommand(workDir, operation string, tfArgs, tgArgs []string
 
 	var cmd *exec.Cmd
 	if e.isTerragrunt(workDir) {
-		// lgtm [go/command-injection]
+		// codeql[go/command-injection] safe: arguments are controlled by application logic
 		cmd = exec.CommandContext(ctx, "terragrunt", tgArgs...)
 	} else {
-		// lgtm [go/command-injection]
+		// codeql[go/command-injection] safe: arguments are controlled by application logic
 		cmd = exec.CommandContext(ctx, "terraform", tfArgs...)
 	}
 	cmd.Dir = workDir

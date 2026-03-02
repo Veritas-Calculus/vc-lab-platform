@@ -374,7 +374,7 @@ func (s *resourceService) ApproveRequest(ctx context.Context, id, approverID, re
 	// Start provisioning asynchronously
 	// lgtm [go/uncontrolled-resource-consumption]
 	go func() { //nolint:contextcheck // intentionally using background context for async operation
-		bgCtx := context.Background()
+		bgCtx := context.WithoutCancel(ctx)
 		if err := s.provisionResource(bgCtx, request); err != nil {
 			s.logger.Error("failed to provision resource", zap.String("request_id", sanitize.ForLog(request.ID)), zap.Error(err))
 		}
@@ -465,7 +465,7 @@ func (s *resourceService) RetryRequest(ctx context.Context, id, userID string) (
 	// Start provisioning in background
 	// lgtm [go/uncontrolled-resource-consumption]
 	go func() { //nolint:contextcheck // intentionally using background context for async operation
-		bgCtx := context.Background()
+		bgCtx := context.WithoutCancel(ctx)
 		if err := s.provisionResource(bgCtx, request); err != nil {
 			s.logger.Error("resource provisioning retry failed",
 				zap.String("request_id", sanitize.ForLog(id)),
